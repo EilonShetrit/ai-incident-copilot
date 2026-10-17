@@ -106,7 +106,8 @@ def test_runs_tools_then_returns_report(alert, fake_tools):
     assert isinstance(result.report, IncidentReport)
     assert result.report.root_cause.service == "payments"
     assert result.turns == 2
-    assert result.usage == {"input_tokens": 200, "output_tokens": 40}
+    assert result.usage["input_tokens"] == 200
+    assert result.usage["output_tokens"] == 40
     assert fake_tools == [("get_deploy_events", "now-30m", "now", None)]
     assert [c.tool for c in result.trace] == [c.tool for c in seen] == ["get_deploy_events"]
 
@@ -127,7 +128,14 @@ def test_request_shape(alert):
     assert request["output_config"]["effort"] == "high"
     assert request["output_config"]["format"]["type"] == "json_schema"
     assert request["fallbacks"] == "default"
+    assert request["cache_control"] == {"type": "ephemeral"}
     assert "tool_choice" not in request
+
+
+def test_html_entities_in_report_are_decoded(alert):
+    report = {**REPORT, "summary": "change &#39;Refactor DB client&#39; &amp; more"}
+    result = investigate(alert, client=FakeClaude(final(report)), now=NOW)
+    assert result.report.summary == "change 'Refactor DB client' & more"
 
 
 def test_parallel_tool_calls_return_in_one_message(alert):

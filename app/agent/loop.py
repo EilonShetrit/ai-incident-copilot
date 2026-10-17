@@ -4,6 +4,7 @@ The loop is written by hand (instead of an SDK tool runner) so every tool call c
 a trace and streamed to the UI as it happens.
 """
 
+import html
 import json
 import time
 from collections.abc import Callable
@@ -30,6 +31,14 @@ MAX_RESULT_CHARS = 20_000
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 REPORT_FORMAT = {"type": "json_schema", "schema": anthropic.transform_schema(IncidentReport)}
+
+
+USAGE_FIELDS = [
+    "input_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+    "output_tokens",
+]
 
 
 class InvestigationError(RuntimeError):
@@ -84,6 +93,17 @@ def _serialize(result: Any) -> str:
     return text
 
 
+def _unescape(value: Any) -> Any:
+    """The model sometimes writes HTML entities (&#39;) inside JSON strings; decode them."""
+    if isinstance(value, str):
+        return html.unescape(value)
+    if isinstance(value, list):
+        return [_unescape(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _unescape(v) for k, v in value.items()}
+    return value
+
+
 def investigate(
     alert: DatadogAlert,
     *,
@@ -97,7 +117,7 @@ def investigate(
     now = now or datetime.now(UTC)
     messages: list[dict[str, Any]] = [{"role": "user", "content": build_user_message(alert, now)}]
     trace: list[ToolCall] = []
-    usage = {"input_tokens": 0, "output_tokens": 0}
+    usage = dict.fromkeys(USAGE_FIELDS, 0)
 
     for turn in range(1, max_turns + 1):
         response = client.beta.messages.create(
@@ -109,9 +129,11 @@ def investigate(
             output_config={"effort": "high", "format": REPORT_FORMAT},
             betas=[FALLBACK_BETA],
             fallbacks="default",
+            # Each turn resends the whole conversation; caching makes the repeated prefix cheap.
+            cache_control={"type": "ephemeral"},
         )
-        usage["input_tokens"] += response.usage.input_tokens
-        usage["output_tokens"] += response.usage.output_tokens
+        for name in USAGE_FIELDS:
+            usage[name] += getattr(response.usage, name, None) or 0
 
         if response.stop_reason == "refusal":
             raise InvestigationError("Claude declined to investigate this alert")
@@ -158,8 +180,8 @@ def investigate(
         if text is None:
             raise InvestigationError(f"No report in final response (stop: {response.stop_reason})")
         try:
-            report = IncidentReport.model_validate_json(text)
-        except ValidationError as exc:
+            report = IncidentReport.model_validate(_unescape(json.loads(text)))
+        except (json.JSONDecodeError, ValidationError) as exc:
             raise InvestigationError(f"Report did not match the schema: {exc}") from exc
         return Investigation(report=report, trace=trace, turns=turn, usage=usage)
 

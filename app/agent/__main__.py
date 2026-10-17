@@ -50,9 +50,12 @@ def main() -> None:
         result = investigate(alert, on_tool_call=print_call)
     except InvestigationError as exc:
         sys.exit(f"Investigation failed: {exc}")
+    u = result.usage
+    cached = u["cache_read_input_tokens"]
+    total_in = u["input_tokens"] + u["cache_creation_input_tokens"] + cached
     print(
         f"Done in {result.turns} turns, {len(result.trace)} tool calls, "
-        f"{result.usage['input_tokens']} in / {result.usage['output_tokens']} out tokens\n",
+        f"{total_in} input tokens ({cached} from cache) / {u['output_tokens']} output tokens\n",
         file=sys.stderr,
     )
 
