@@ -1,0 +1,19 @@
+{
+  "index_patterns": ["metrics-*"],
+  "template": {
+    "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+    "mappings": {
+      "properties": {
+        "@timestamp": {"type": "date"},
+        "service": {"type": "keyword"},
+        "version": {"type": "keyword"},
+        "requests": {"type": "integer"},
+        "errors": {"type": "integer"},
+        "error_rate": {"type": "float"},
+        "latency_p95_ms": {"type": "integer"},
+        "db_pool_max": {"type": "integer"},
+        "db_pool_active": {"type": "integer"}
+      }
+    }
+  }
+}

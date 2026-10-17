@@ -1,4 +1,4 @@
-.PHONY: help install up down debug status api test lint format
+.PHONY: help install up down debug status seed api test lint format
 
 help:  ## Show available commands
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -18,6 +18,9 @@ debug:  ## Start OpenSearch Dashboards on :5601
 
 status:  ## Show OpenSearch cluster health
 	@curl -s "http://localhost:9200/_cluster/health?pretty"
+
+seed:  ## Generate the scenario data and load it into OpenSearch
+	uv run python -m generator.seed
 
 api:  ## Run the FastAPI server on :8000
 	uv run uvicorn app.api.main:app --reload --host 0.0.0.0 --port 8000

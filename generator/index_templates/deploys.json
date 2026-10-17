@@ -1,0 +1,18 @@
+{
+  "index_patterns": ["deploys-*"],
+  "template": {
+    "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+    "mappings": {
+      "properties": {
+        "@timestamp": {"type": "date"},
+        "service": {"type": "keyword"},
+        "from_version": {"type": "keyword"},
+        "to_version": {"type": "keyword"},
+        "author": {"type": "keyword"},
+        "change": {"type": "text"},
+        "commit": {"type": "keyword"},
+        "status": {"type": "keyword"}
+      }
+    }
+  }
+}

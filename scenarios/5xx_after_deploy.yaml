@@ -1,0 +1,81 @@
+# Scenario: a bad deploy of `payments` shrinks its DB connection pool,
+# which surfaces as a 5xx spike on `api-gateway`.
+#
+# All times are minutes relative to the deploy (T = 0).
+name: 5xx_after_deploy
+description: >
+  payments v2.4.0 ships with db.pool.max_size=5 (was 50). Requests time out waiting
+  for a connection, payments returns 503, checkout returns 502, and the 5xx rate on
+  api-gateway jumps. inventory is healthy and must be ruled out.
+
+window:
+  start: -60          # first data point
+  end: 10             # last data point (anchored to "now" when seeding)
+  alert_at: 5         # when the Datadog monitor fires
+
+seed: 42
+requests_per_minute: 40   # log lines per service per minute (sampled access logs)
+
+# Call graph: who calls whom on a typical request.
+topology:
+  api-gateway: [checkout]
+  checkout: [payments, inventory]
+  payments: [postgres]
+  inventory: []
+
+services:
+  api-gateway:
+    version: v1.12.3
+    baseline: {error_rate: 0.002, latency_p95_ms: 180}
+  checkout:
+    version: v3.8.0
+    baseline: {error_rate: 0.002, latency_p95_ms: 150}
+  payments:
+    version: v2.3.0
+    baseline: {error_rate: 0.001, latency_p95_ms: 120, db_pool_max: 50, db_pool_active: 18}
+  inventory:
+    version: v1.4.2
+    baseline: {error_rate: 0.001, latency_p95_ms: 60}
+
+deploys:
+  - at: 0
+    service: payments
+    from_version: v2.3.0
+    to_version: v2.4.0
+    author: ci-bot
+    change: "Refactor DB client config loading"
+    commit: 9f3c2ab
+
+# What breaks, and when. Effects ramp in linearly over `ramp` minutes.
+faults:
+  - service: payments          # new config takes effect with the deploy
+    starts_at: 0
+    effect: {db_pool_max: 5, db_pool_active: 5}
+  - service: payments          # pool saturates once traffic catches up
+    starts_at: 2
+    ramp: 1
+    effect: {error_rate: 0.22, latency_p95_ms: 4200}
+    status_code: 503
+    error_message: "TimeoutError: could not acquire connection from pool (max_size=5, timeout=3000ms)"
+  - service: checkout
+    starts_at: 3
+    ramp: 1
+    effect: {error_rate: 0.19, latency_p95_ms: 4400}
+    status_code: 502
+    error_message: "upstream payments returned 503 Service Unavailable"
+  - service: api-gateway
+    starts_at: 3
+    ramp: 1
+    effect: {error_rate: 0.18, latency_p95_ms: 4600}
+    status_code: 502
+    error_message: "upstream checkout returned 502 Bad Gateway"
+
+# What a correct investigation concludes. Used by tests and the eval in later stages.
+ground_truth:
+  alerted_service: api-gateway
+  root_cause_service: payments
+  root_cause_deploy: payments v2.4.0
+  root_cause: "payments v2.4.0 reduced the DB connection pool from 50 to 5"
+  impacted_services: [api-gateway, checkout, payments]
+  healthy_services: [inventory]
+  expected_next_step: "Roll back payments to v2.3.0"

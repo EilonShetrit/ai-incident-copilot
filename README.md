@@ -33,6 +33,7 @@ The agent calls tools such as `search_logs`, `get_metrics`, `get_deploy_events` 
 
 ```bash
 make up     # start OpenSearch
+make seed   # load the synthetic incident data
 make test   # run tests
 make api    # start the API on :8000 (docs at /docs)
 ```
@@ -43,9 +44,20 @@ make api    # start the API on :8000 (docs at /docs)
 cp .env.example .env   # add your ANTHROPIC_API_KEY
 make install
 make up
+make seed
 ```
 
 Run `make help` for all commands.
+
+## The scenario
+
+A small shop: `api-gateway → checkout → payments → postgres`, plus `inventory`.
+At T+0, `payments v2.4.0` ships with its DB connection pool cut from 50 to 5. Two minutes later
+requests start timing out waiting for a connection: `payments` returns 503, `checkout` returns 502,
+and the monitor fires on **`api-gateway`** at T+5 with ~18% 5xx. `inventory` stays healthy.
+
+The alert points at the gateway; the root cause is two hops downstream. The full timeline and the
+expected conclusion live in [`scenarios/5xx_after_deploy.yaml`](scenarios/5xx_after_deploy.yaml).
 
 ## Tech stack
 
@@ -54,7 +66,7 @@ Python 3.12 · FastAPI · Claude API (tool use) · OpenSearch · Streamlit · Do
 ## Roadmap
 
 - [x] Project skeleton, dev container, CI
-- [ ] Synthetic microservice logs, metrics and deploy events
+- [x] Synthetic microservice logs, metrics and deploy events
 - [ ] Investigation tools over OpenSearch
 - [ ] Agent loop with structured incident report
 - [ ] Alert webhook API
