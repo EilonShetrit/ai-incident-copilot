@@ -34,6 +34,7 @@ The agent calls tools such as `search_logs`, `get_metrics`, `get_deploy_events` 
 ```bash
 make up     # start OpenSearch
 make seed   # load the synthetic incident data
+make investigate  # let the agent investigate the sample alert
 make test   # run tests
 make api    # start the API on :8000 (docs at /docs)
 ```
@@ -70,6 +71,29 @@ uv run python -m app.tools get_runbook --name high_5xx_rate
 | `get_service_map` | Who calls whom, and who owns it? |
 | `get_runbook` | What does our process say to do next? |
 
+## The agent
+
+```bash
+uv run python -m app.agent --alert samples/alert_5xx.json          # Markdown report
+uv run python -m app.agent --alert samples/alert_5xx.json --json   # report + full trace
+```
+
+The agent gets the alert ([`samples/alert_5xx.json`](samples/alert_5xx.json), Datadog webhook
+format) and runs a tool-use loop with Claude: it decides which tool to call, reads the result and
+decides again, until it can write the report. Every tool call is printed as it happens and kept
+in a trace.
+
+- **Structured output.** The final answer is constrained to a JSON schema generated from the
+  [`IncidentReport`](app/agent/schemas.py) Pydantic model: severity, impact, impacted and
+  ruled-out services, root cause with confidence, evidence per tool, timeline and next steps.
+- **Validated tool calls.** Each tool's input schema comes from a Pydantic model, and the same
+  model validates Claude's arguments. Bad arguments or a failing tool go back to Claude as an
+  error it can recover from, instead of crashing the run.
+- **Guardrails.** A turn limit, explicit handling of refusals and `max_tokens`, and
+  server-side model fallbacks if a request is declined.
+- **Tested without the API.** [`tests/test_agent.py`](tests/test_agent.py) drives the loop with
+  a scripted fake Claude client, so CI needs no API key.
+
 ## The scenario
 
 A small shop: `api-gateway → checkout → payments → postgres`, plus `inventory`.
@@ -89,7 +113,7 @@ Python 3.12 · FastAPI · Claude API (tool use) · OpenSearch · Streamlit · Do
 - [x] Project skeleton, dev container, CI
 - [x] Synthetic microservice logs, metrics and deploy events
 - [x] Investigation tools over OpenSearch
-- [ ] Agent loop with structured incident report
+- [x] Agent loop with structured incident report
 - [ ] Alert webhook API
 - [ ] Streamlit UI with live investigation timeline
 - [ ] Scenario eval against ground truth

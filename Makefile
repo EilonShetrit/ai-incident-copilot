@@ -1,4 +1,4 @@
-.PHONY: help install up down debug status seed api test lint format
+.PHONY: help install up down debug status seed investigate api test lint format
 
 help:  ## Show available commands
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -21,6 +21,9 @@ status:  ## Show OpenSearch cluster health
 
 seed:  ## Generate the scenario data and load it into OpenSearch
 	uv run python -m generator.seed
+
+investigate:  ## Run the agent on the sample alert (needs ANTHROPIC_API_KEY)
+	uv run python -m app.agent --alert samples/alert_5xx.json
 
 api:  ## Run the FastAPI server on :8000
 	uv run uvicorn app.api.main:app --reload --host 0.0.0.0 --port 8000
