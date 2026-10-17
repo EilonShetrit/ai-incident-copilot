@@ -49,6 +49,27 @@ make seed
 
 Run `make help` for all commands.
 
+## Investigation tools
+
+Each tool returns a compact summary (counts, top messages, min/avg/max), not thousands of raw
+lines, so the agent's context stays small and focused. Every tool also runs from the terminal:
+
+```bash
+uv run python -m app.tools get_deploy_events --start now-30m --end now
+uv run python -m app.tools search_logs --service payments --level ERROR --start now-15m --end now
+uv run python -m app.tools get_metrics --service api-gateway --start now-20m --end now
+uv run python -m app.tools get_service_map
+uv run python -m app.tools get_runbook --name high_5xx_rate
+```
+
+| Tool | What it answers |
+|---|---|
+| `get_deploy_events` | What changed, and when? |
+| `search_logs` | What are the errors, from which version and host? |
+| `get_metrics` | How bad is it, and since when? |
+| `get_service_map` | Who calls whom, and who owns it? |
+| `get_runbook` | What does our process say to do next? |
+
 ## The scenario
 
 A small shop: `api-gateway → checkout → payments → postgres`, plus `inventory`.
@@ -67,7 +88,7 @@ Python 3.12 · FastAPI · Claude API (tool use) · OpenSearch · Streamlit · Do
 
 - [x] Project skeleton, dev container, CI
 - [x] Synthetic microservice logs, metrics and deploy events
-- [ ] Investigation tools over OpenSearch
+- [x] Investigation tools over OpenSearch
 - [ ] Agent loop with structured incident report
 - [ ] Alert webhook API
 - [ ] Streamlit UI with live investigation timeline

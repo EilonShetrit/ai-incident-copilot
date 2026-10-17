@@ -12,11 +12,11 @@ from pathlib import Path
 
 from opensearchpy import OpenSearch, helpers
 
-from app.config import settings
+from app.clients.opensearch import DEPLOYS_INDEX, LOGS_INDEX, METRICS_INDEX, get_client
 from generator.generate import Dataset, generate, load_scenario
 
 TEMPLATES_DIR = Path(__file__).parent / "index_templates"
-INDICES = {"logs": "logs-synthetic", "metrics": "metrics-synthetic", "deploys": "deploys-synthetic"}
+INDICES = {"logs": LOGS_INDEX, "metrics": METRICS_INDEX, "deploys": DEPLOYS_INDEX}
 
 
 def install_templates(client: OpenSearch) -> None:
@@ -43,7 +43,7 @@ def main() -> None:
 
     scenario = load_scenario(args.scenario)
     data = generate(scenario)
-    client = OpenSearch(settings.opensearch_url)
+    client = get_client()
 
     install_templates(client)
     counts = load(client, data)

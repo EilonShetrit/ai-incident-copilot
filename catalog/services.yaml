@@ -1,0 +1,22 @@
+# Service catalog: what each service does, who owns it, and what it calls.
+services:
+  api-gateway:
+    description: Public entry point; routes /api/v1/* to backend services.
+    team: platform
+    depends_on: [checkout]
+  checkout:
+    description: Builds and submits orders.
+    team: commerce
+    depends_on: [payments, inventory]
+  payments:
+    description: Authorizes and captures card payments.
+    team: payments
+    depends_on: [postgres]
+  inventory:
+    description: Stock levels and reservations.
+    team: commerce
+    depends_on: []
+  postgres:
+    description: Primary database for payments.
+    team: data-platform
+    depends_on: []
