@@ -11,6 +11,9 @@ Examples:
 import json
 import sys
 
+from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
+
+from app.config import settings
 from app.tools import TOOLS
 
 
@@ -28,7 +31,12 @@ def main(argv: list[str]) -> None:
         key = flag.removeprefix("--").replace("-", "_")
         kwargs[key] = int(value) if value.isdigit() else value
 
-    print(json.dumps(TOOLS[name](**kwargs), indent=2, ensure_ascii=False))
+    try:
+        result = TOOLS[name](**kwargs)
+    except OpenSearchConnectionError:
+        url = settings.opensearch_url
+        sys.exit(f"OpenSearch is not reachable at {url}. Run `make up`, then `make seed`.")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
