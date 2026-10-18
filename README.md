@@ -35,8 +35,9 @@ The agent calls tools such as `search_logs`, `get_metrics`, `get_deploy_events` 
 make up     # start OpenSearch
 make seed   # load the synthetic incident data
 make investigate  # let the agent investigate the sample alert
+make api    # start the API (terminal 1)
+make ui     # start the UI on :8501 (terminal 2)
 make test   # run tests
-make api    # start the API on :8000 (docs at /docs)
 ```
 
 **Option B: locally.** Requires Docker, Python 3.12 and [uv](https://docs.astral.sh/uv/).
@@ -93,6 +94,14 @@ in a trace.
   server-side model fallbacks if a request is declined.
 - **Tested without the API.** [`tests/test_agent.py`](tests/test_agent.py) drives the loop with
   a scripted fake Claude client, so CI needs no API key.
+
+## The UI
+
+`make api` in one terminal, `make ui` in another, then open port 8501 and click
+**Fire sample alert**. The page shows each tool call as the agent makes it, then the report:
+severity, root cause and confidence, impacted vs. ruled-out services, next steps, the evidence
+behind each claim, and the error rate of every service involved. The UI talks only to the API,
+the same way a real alerting pipeline would.
 
 ## Alert webhook API
 
@@ -151,7 +160,7 @@ Python 3.12 · FastAPI · Claude API (tool use) · OpenSearch · Streamlit · Do
 - [x] Investigation tools over OpenSearch
 - [x] Agent loop with structured incident report
 - [x] Alert webhook API
-- [ ] Streamlit UI with live investigation timeline
+- [x] Streamlit UI with live investigation timeline
 - [ ] Scenario eval against ground truth
 - [ ] Demo video
 

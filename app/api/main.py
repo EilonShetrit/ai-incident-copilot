@@ -1,12 +1,13 @@
 import secrets
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Response, status
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.responses import PlainTextResponse
 
 from app.agent import InvestigationError, investigate
 from app.config import settings
 from app.incidents import Incident, IncidentStatus, store
 from app.models import DatadogAlert
+from app.tools import get_metrics, get_service_map
 
 app = FastAPI(
     title="AI Incident Copilot",
@@ -107,3 +108,20 @@ def get_report_markdown(incident_id: str) -> str:
     if incident.report is None:
         raise HTTPException(status.HTTP_409_CONFLICT, f"Incident is {incident.status}, no report")
     return incident.report.to_markdown()
+
+
+@app.get("/services")
+def list_services() -> dict:
+    """The service catalog: owners and dependencies."""
+    return get_service_map()
+
+
+@app.get("/services/{service}/metrics")
+def service_metrics(service: str, minutes: int = Query(30, ge=1, le=240)) -> dict:
+    """Per-minute metrics for one service over the last N minutes (for dashboards)."""
+    try:
+        return get_metrics(start=f"now-{minutes}m", end="now", service=service)
+    except Exception as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, f"Metrics unavailable: {type(exc).__name__}"
+        ) from exc

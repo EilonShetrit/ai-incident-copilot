@@ -121,3 +121,16 @@ def test_invalid_payload_is_rejected(client):
 
 def test_unknown_incident_is_404(client):
     assert client.get("/incidents/inc-nope").status_code == 404
+
+
+def test_service_metrics(client, monkeypatch):
+    monkeypatch.setattr(main, "get_metrics", lambda start, end, service: {"service": service})
+    assert client.get("/services/payments/metrics?minutes=15").json() == {"service": "payments"}
+
+
+def test_service_metrics_when_opensearch_is_down(client, monkeypatch):
+    def down(**kwargs):
+        raise ConnectionError("refused")
+
+    monkeypatch.setattr(main, "get_metrics", down)
+    assert client.get("/services/payments/metrics").status_code == 503
