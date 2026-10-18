@@ -1,4 +1,4 @@
-.PHONY: help install up down debug status seed investigate api test lint format
+.PHONY: help install up down debug status seed investigate api alert test lint format
 
 help:  ## Show available commands
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -27,6 +27,10 @@ investigate:  ## Run the agent on the sample alert (needs ANTHROPIC_API_KEY)
 
 api:  ## Run the FastAPI server on :8000
 	uv run uvicorn app.api.main:app --reload --host 0.0.0.0 --port 8000
+
+alert:  ## Send the sample alert to the running API (start it with `make api`)
+	@curl -s -X POST http://localhost:8000/webhooks/datadog \
+		-H 'Content-Type: application/json' -d @samples/alert_5xx.json; echo
 
 test:  ## Run tests
 	uv run pytest -q

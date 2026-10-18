@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     claude_model: str = "claude-opus-5-5"
     opensearch_url: str = "http://localhost:9200"
+    # If set, POST /webhooks/datadog requires a matching X-Webhook-Token header.
+    webhook_token: str = ""
 
 
 settings = Settings()

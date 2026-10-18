@@ -1,0 +1,158 @@
+{
+  "info": {
+    "name": "AI Incident Copilot",
+    "description": "Fire a synthetic Datadog alert at the copilot and read the AI incident report. Start the API with `make api`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "webhookToken",
+      "value": ""
+    },
+    {
+      "key": "incidentId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('API is up', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Fire alert: api-gateway 5xx",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Webhook-Token",
+            "value": "{{webhookToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/webhooks/datadog",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "webhooks",
+            "datadog"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": \"7381920045\",\n  \"title\": \"[Triggered] api-gateway 5xx rate is above 5%\",\n  \"body\": \"5xx error rate on api-gateway is 18.4% over the last 5 minutes (threshold 5%).\",\n  \"alert_transition\": \"Triggered\",\n  \"priority\": \"P2\",\n  \"alert_query\": \"sum(last_5m):sum:http.requests{service:api-gateway,status_class:5xx}.as_count() / sum:http.requests{service:api-gateway}.as_count() > 0.05\",\n  \"tags\": \"service:api-gateway,env:prod,team:platform\"\n}\n"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Investigation started', () => pm.expect(pm.response.code).to.be.oneOf([200, 202]));",
+              "pm.collectionVariables.set('incidentId', pm.response.json().incident_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get incident (poll until resolved)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/incidents/{{incidentId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "incidents",
+            "{{incidentId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const status = pm.response.json().status;",
+              "pm.test(`Status: ${status}`, () => pm.expect(status).to.be.oneOf(['investigating', 'resolved']));",
+              "if (status === 'resolved') {",
+              "  pm.test('Report names a root cause', () => pm.expect(pm.response.json().report.root_cause.service).to.be.a('string'));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get report (Markdown)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/incidents/{{incidentId}}/report.md",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "incidents",
+            "{{incidentId}}",
+            "report.md"
+          ]
+        }
+      }
+    },
+    {
+      "name": "List incidents",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/incidents",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "incidents"
+          ]
+        }
+      }
+    }
+  ]
+}

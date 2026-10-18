@@ -1,0 +1,34 @@
+# Requests for the VS Code REST Client extension (installed in the dev container).
+# Start the API with `make api`, then click "Send Request" above each request.
+
+@baseUrl = http://localhost:8000
+
+### Health
+GET {{baseUrl}}/health
+
+### Fire the sample alert (Datadog webhook format)
+# @name alert
+POST {{baseUrl}}/webhooks/datadog
+Content-Type: application/json
+
+< ../samples/alert_5xx.json
+
+### Poll the incident: trace grows while the agent works, report appears when done
+GET {{baseUrl}}/incidents/{{alert.response.body.$.incident_id}}
+
+### The report as Markdown
+GET {{baseUrl}}/incidents/{{alert.response.body.$.incident_id}}/report.md
+
+### All incidents
+GET {{baseUrl}}/incidents
+
+### Recovery notifications are acknowledged and ignored
+POST {{baseUrl}}/webhooks/datadog
+Content-Type: application/json
+
+{
+  "id": "7381920045",
+  "title": "[Recovered] api-gateway 5xx rate is above 5%",
+  "alert_transition": "Recovered",
+  "tags": "service:api-gateway,env:prod"
+}

@@ -94,6 +94,42 @@ in a trace.
 - **Tested without the API.** [`tests/test_agent.py`](tests/test_agent.py) drives the loop with
   a scripted fake Claude client, so CI needs no API key.
 
+## Alert webhook API
+
+Point a Datadog webhook (or anything that speaks its payload format) at the API, and the agent
+investigates in the background:
+
+```bash
+make api      # terminal 1: start the API on :8000
+make alert    # terminal 2: send samples/alert_5xx.json
+# {"incident_id":"inc-3f9a1c2e","status":"investigating","duplicate":false}
+
+curl -s localhost:8000/incidents/inc-3f9a1c2e            # trace so far, then the report
+curl -s localhost:8000/incidents/inc-3f9a1c2e/report.md  # report as Markdown
+```
+
+| Endpoint | What it does |
+|---|---|
+| `POST /webhooks/datadog` | Opens an incident and starts the investigation. Returns `202` at once. |
+| `GET /incidents` | All incidents, newest first. |
+| `GET /incidents/{id}` | Status (`investigating`, `resolved`, `failed`), the live tool-call trace and the report. |
+| `GET /incidents/{id}/report.md` | The report as Markdown. |
+
+The webhook behaves the way on-call tooling should:
+
+- **Fast acknowledgement.** An investigation takes a minute or two, longer than a webhook
+  sender waits, so it runs in the background and the response carries the incident id.
+- **Idempotent.** Datadog retries failed deliveries and re-notifies while a monitor stays red.
+  An alert that is already under investigation returns the existing incident.
+- **Only triggers start work.** `Recovered` notifications are acknowledged and ignored.
+- **Optional shared secret.** Set `WEBHOOK_TOKEN` and the endpoint requires a matching
+  `X-Webhook-Token` header.
+
+Interactive docs are at `/docs`. Ready-made requests are in [`api/requests.http`](api/requests.http)
+(VS Code REST Client, preinstalled in the dev container) and a
+[Postman collection](api/ai-incident-copilot.postman_collection.json) that chains the incident id
+between requests.
+
 ## The scenario
 
 A small shop: `api-gateway → checkout → payments → postgres`, plus `inventory`.
@@ -114,7 +150,7 @@ Python 3.12 · FastAPI · Claude API (tool use) · OpenSearch · Streamlit · Do
 - [x] Synthetic microservice logs, metrics and deploy events
 - [x] Investigation tools over OpenSearch
 - [x] Agent loop with structured incident report
-- [ ] Alert webhook API
+- [x] Alert webhook API
 - [ ] Streamlit UI with live investigation timeline
 - [ ] Scenario eval against ground truth
 - [ ] Demo video
