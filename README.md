@@ -40,7 +40,14 @@ make ui     # start the UI on :8501 (terminal 2)
 make test   # run tests
 ```
 
-**Option B: locally.** Requires Docker, Python 3.12 and [uv](https://docs.astral.sh/uv/).
+**Option B: everything in Docker.** Requires only Docker:
+
+```bash
+export ANTHROPIC_API_KEY=...   # or put it in .env
+make demo                      # OpenSearch + seed + API on :8000 + UI on :8501
+```
+
+**Option C: locally.** Requires Docker, Python 3.12 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 cp .env.example .env   # add your ANTHROPIC_API_KEY
@@ -149,6 +156,26 @@ and the monitor fires on **`api-gateway`** at T+5 with ~18% 5xx. `inventory` sta
 The alert points at the gateway; the root cause is two hops downstream. The full timeline and the
 expected conclusion live in [`scenarios/5xx_after_deploy.yaml`](scenarios/5xx_after_deploy.yaml).
 
+## Evaluation
+
+An agent that sounds confident is not the same as an agent that is right. `make eval` runs the
+agent on the scenario several times, re-seeding fresh data each time, and grades every report
+against the scenario's `ground_truth`:
+
+| Check | Passes when |
+|---|---|
+| `root_cause_service` | The root cause is `payments`, not the alerted `api-gateway` |
+| `root_cause_explained` | The hypothesis names the deploy (`v2.4.0`) and the mechanism (DB pool) |
+| `impacted_services` | Exactly `api-gateway`, `checkout`, `payments` |
+| `healthy_ruled_out` | `inventory` is listed as ruled out, not impacted |
+| `mitigation_first` | The first next step is rolling back `payments` |
+| `evidence_backed` | The evidence cites at least three different tools |
+
+Results land in [`evals/results/`](evals/results/): one JSON per eval with every report, and
+`latest.md` with a pass/fail table. The [Eval workflow](.github/workflows/eval.yml) runs the same
+thing in GitHub Actions on demand. The scoring itself is unit-tested, so CI checks the grader
+without calling the API.
+
 ## Tech stack
 
 Python 3.12 · FastAPI · Claude API (tool use) · OpenSearch · Streamlit · Docker Compose · GitHub Actions
@@ -161,7 +188,8 @@ Python 3.12 · FastAPI · Claude API (tool use) · OpenSearch · Streamlit · Do
 - [x] Agent loop with structured incident report
 - [x] Alert webhook API
 - [x] Streamlit UI with live investigation timeline
-- [ ] Scenario eval against ground truth
+- [x] Scenario eval against ground truth
+- [x] Docker image and one-command demo
 - [ ] Demo video
 
 ## License

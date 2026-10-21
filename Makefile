@@ -1,4 +1,4 @@
-.PHONY: help install up down debug status seed investigate api ui alert test lint format
+.PHONY: help install up down debug status seed investigate api ui alert eval demo demo-down test lint format
 
 help:  ## Show available commands
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -11,7 +11,7 @@ up:  ## Start OpenSearch and wait until it is healthy
 	@curl -s http://localhost:9200 | head -20
 
 down:  ## Stop all containers
-	docker compose --profile debug down
+	docker compose --profile debug --profile app down
 
 debug:  ## Start OpenSearch Dashboards on :5601
 	docker compose --profile debug up -d --wait
@@ -34,6 +34,15 @@ ui:  ## Run the Streamlit UI on :8501 (needs `make api` running)
 alert:  ## Send the sample alert to the running API (start it with `make api`)
 	@curl -s -X POST http://localhost:8000/webhooks/datadog \
 		-H 'Content-Type: application/json' -d @samples/alert_5xx.json; echo
+
+eval:  ## Grade the agent against the scenario's ground truth (3 runs, uses the API key)
+	uv run python -m evals.run --runs 3
+
+demo:  ## Build and run the whole stack in Docker: OpenSearch, seed, API (:8000), UI (:8501)
+	docker compose --profile app up -d --build --wait
+
+demo-down:  ## Stop the Docker stack
+	docker compose --profile app down
 
 test:  ## Run tests
 	uv run pytest -q

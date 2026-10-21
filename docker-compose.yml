@@ -35,5 +35,60 @@ services:
       opensearch:
         condition: service_healthy
 
+  # The full stack: `make demo`. API keys come from your shell or .env, never from this file.
+  seed:
+    build: .
+    image: ai-incident-copilot
+    profiles: ["app"]
+    command: ["python", "-m", "generator.seed"]
+    environment:
+      - OPENSEARCH_URL=http://opensearch:9200
+    healthcheck:
+      disable: true
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+  api:
+    image: ai-incident-copilot
+    container_name: aic-api
+    profiles: ["app"]
+    environment:
+      - OPENSEARCH_URL=http://opensearch:9200
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-5-5}
+      - WEBHOOK_TOKEN=${WEBHOOK_TOKEN:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+  ui:
+    image: ai-incident-copilot
+    container_name: aic-ui
+    profiles: ["app"]
+    command:
+      - python
+      - -m
+      - streamlit
+      - run
+      - ui/app.py
+      - --server.port=8501
+      - --server.address=0.0.0.0
+      - --server.headless=true
+    environment:
+      - API_URL=http://api:8000
+    ports:
+      - "8501:8501"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   opensearch-data:

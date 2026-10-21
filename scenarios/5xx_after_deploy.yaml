@@ -79,3 +79,6 @@ ground_truth:
   impacted_services: [api-gateway, checkout, payments]
   healthy_services: [inventory]
   expected_next_step: "Roll back payments to v2.3.0"
+  # Used by the eval (evals/scoring.py) to grade free-text fields.
+  root_cause_keywords: [v2.4.0, pool]
+  first_step_keywords: [rollback, payments]
