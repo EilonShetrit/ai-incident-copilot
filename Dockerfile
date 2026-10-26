@@ -16,6 +16,7 @@ COPY catalog ./catalog
 COPY runbooks ./runbooks
 COPY scenarios ./scenarios
 COPY samples ./samples
+COPY .streamlit ./.streamlit
 
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 USER app

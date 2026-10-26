@@ -4,18 +4,40 @@ make api   # terminal 1
 make ui    # terminal 2, then open :8501
 """
 
+import html
 import json
 
+import altair as alt
 import httpx
 import pandas as pd
 import streamlit as st
 
 from ui import api_client
 
-st.set_page_config(page_title="AI Incident Copilot", page_icon="🚨", layout="wide")
+st.set_page_config(page_title="AI Incident Copilot", page_icon="🛟", layout="wide")
 
-STATUS_ICON = {"investigating": "🔎", "resolved": "✅", "failed": "❌"}
-SEVERITY_COLOR = {"SEV1": "red", "SEV2": "orange", "SEV3": "blue"}
+# Soft colors: red is reserved for what is actually broken.
+COLORS = {
+    "accent": "#4F46E5",
+    "muted": "#6B7280",
+    "bad": "#E5484D",
+    "bad_bg": "#FDECEC",
+    "warn": "#D97706",
+    "warn_bg": "#FEF3E2",
+    "ok": "#16A34A",
+    "ok_bg": "#E8F7EE",
+    "info_bg": "#EEF0FD",
+}
+STATUS = {
+    "investigating": ("Investigating", COLORS["accent"], COLORS["info_bg"]),
+    "resolved": ("Report ready", COLORS["ok"], COLORS["ok_bg"]),
+    "failed": ("Failed", COLORS["bad"], COLORS["bad_bg"]),
+}
+SEVERITY = {
+    "SEV1": (COLORS["bad"], COLORS["bad_bg"]),
+    "SEV2": (COLORS["warn"], COLORS["warn_bg"]),
+    "SEV3": (COLORS["accent"], COLORS["info_bg"]),
+}
 TOOL_ICON = {
     "get_deploy_events": "🚀",
     "search_logs": "📜",
@@ -23,6 +45,37 @@ TOOL_ICON = {
     "get_service_map": "🗺️",
     "get_runbook": "📘",
 }
+IMPACTED_LINE_COLORS = ["#E5484D", "#F08C3A", "#A855F7", "#0EA5E9", "#EC4899"]
+HEALTHY_LINE_COLOR = "#B8BEC9"
+
+st.html(
+    """
+<style>
+  .block-container { padding-top: 2.2rem; max-width: 1280px; }
+  h1, h2, h3 { letter-spacing: -0.01em; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.78rem;
+          font-weight: 600; line-height: 1.6; margin-right: 6px; }
+  .eyebrow { color: #6B7280; font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
+             letter-spacing: 0.06em; margin-bottom: 2px; }
+  .alert-title { font-size: 1.6rem; font-weight: 700; margin: 0 0 6px 0; line-height: 1.25; }
+  .meta { color: #6B7280; font-size: 0.85rem; }
+  .tag { display: inline-block; background: #EEF0F6; color: #4B5263; border-radius: 6px;
+         padding: 1px 8px; font-size: 0.75rem; margin: 0 4px 4px 0; }
+  .step-now { background: #EEF0FD; border-left: 3px solid #4F46E5; padding: 10px 14px;
+              border-radius: 8px; margin-bottom: 8px; }
+  .step { padding: 6px 14px; color: #374151; }
+  .kpi-label { color: #6B7280; font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+               letter-spacing: 0.04em; white-space: nowrap; }
+  .kpi-value { font-size: 1.1rem; font-weight: 700; margin-top: 2px; line-height: 1.5;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  [data-testid="stExpander"] details summary p { font-size: 0.9rem; }
+</style>
+"""
+)
+
+
+def pill(text: str, fg: str, bg: str) -> str:
+    return f'<span class="pill" style="color:{fg};background:{bg}">{html.escape(text)}</span>'
 
 
 def short_time(value: str | None) -> str:
@@ -38,33 +91,44 @@ def describe_call(call: dict) -> str:
     if "start" in call["input"]:
         window = f" · {short_time(call['input']['start'])}–{short_time(call['input'].get('end'))}"
     icon = "⚠️" if call["is_error"] else TOOL_ICON.get(call["tool"], "🔧")
-    return f"{icon} **{call['tool']}**({args}){window} · {call['duration_ms']} ms"
+    return f"{icon} {call['tool']}({args}){window} · {call['duration_ms']} ms"
+
+
+def deploy_times(trace: list[dict]) -> list[tuple[str, str]]:
+    """(timestamp, label) of deploys the agent found, to mark them on the chart."""
+    found = {}
+    for call in trace:
+        if call["tool"] == "get_deploy_events" and isinstance(call["result"], dict):
+            for d in call["result"].get("deploys", []):
+                found[d["@timestamp"]] = f"{d['service']} {d.get('to_version', '')}".strip()
+    return sorted(found.items())
 
 
 # ---------- sidebar ----------
 
 with st.sidebar:
-    st.title("🚨 AI Incident Copilot")
-    st.caption("An AI on-call agent. All data is synthetic.")
+    st.markdown("### 🛟 AI Incident Copilot")
+    st.caption("An AI on-call agent that investigates alerts for you. All data is synthetic.")
 
-    api_up = api_client.is_up()
-    if not api_up:
+    if not api_client.is_up():
         st.error(f"API not reachable at {api_client.API_URL}. Start it with `make api`.")
         st.stop()
 
-    if st.button("Fire sample alert", type="primary", use_container_width=True):
+    if st.button("Fire sample alert", type="primary", icon="🔔", use_container_width=True):
         try:
             st.session_state.selected = api_client.fire_sample_alert()["incident_id"]
         except httpx.HTTPStatusError as exc:
             st.error(exc.response.json().get("detail", str(exc)))
-    st.caption("Sends `samples/alert_5xx.json` to `POST /webhooks/datadog`.")
+    st.caption("Sends a Datadog-style webhook: *api-gateway 5xx rate above 5%*.")
 
     incidents = api_client.list_incidents()
     if incidents:
-        st.subheader("Incidents")
+        st.divider()
+        st.markdown('<div class="eyebrow">Incidents</div>', unsafe_allow_html=True)
         ids = [i["id"] for i in incidents]
+        dot = {"investigating": "🔵", "resolved": "🟢", "failed": "🔴"}
         labels = {
-            i["id"]: f"{STATUS_ICON[i['status']]} {i['service'] or '?'} · {i['created_at'][11:19]}"
+            i["id"]: f"{dot[i['status']]} {i['service'] or '?'} · {i['created_at'][11:16]} UTC"
             for i in incidents
         }
         if st.session_state.get("selected") not in ids:
@@ -81,17 +145,33 @@ with st.sidebar:
 # ---------- main ----------
 
 if not incidents:
+    st.markdown('<div class="eyebrow">AI Incident Copilot</div>', unsafe_allow_html=True)
     st.header("No incidents yet")
-    st.markdown(
-        "Click **Fire sample alert** to send a Datadog-style alert. The agent will pull logs, "
-        "metrics and deploys from OpenSearch, follow the service map, read the runbook and "
-        "write an incident report. You can watch every step here as it happens."
-    )
+    st.markdown("When an alert fires, the copilot does the first 15 minutes of on-call for you.")
+    cols = st.columns(3)
+    steps = [
+        ("🔔", "1. Alert arrives", "A Datadog-style webhook hits the API."),
+        (
+            "🔎",
+            "2. Agent investigates",
+            "Claude pulls logs, metrics and deploys, and follows "
+            "the service map. Every step shows up here live.",
+        ),
+        ("📝", "3. Report", "Severity, root cause, impact, evidence and runbook next steps."),
+    ]
+    for col, (icon, title, text) in zip(cols, steps, strict=True):
+        with col.container(border=True):
+            st.markdown(f"### {icon}")
+            st.markdown(f"**{title}**")
+            st.caption(text)
+    st.info("Click **Fire sample alert** in the sidebar to start.", icon="👈")
     st.stop()
 
 
 def render_trace(trace: list[dict], investigating: bool) -> None:
-    st.subheader(f"Investigation · {len(trace)} tool calls")
+    st.markdown(
+        f'<div class="eyebrow">Investigation · {len(trace)} steps</div>', unsafe_allow_html=True
+    )
     if investigating:
         st.info("The agent is investigating…", icon="🔎")
     for n, call in enumerate(trace, 1):
@@ -105,73 +185,140 @@ def render_trace(trace: list[dict], investigating: bool) -> None:
                 st.json(call["result"], expanded=False)
 
 
-IMPACTED_COLORS = ["#d62728", "#ff7f0e", "#9467bd", "#8c564b", "#e377c2"]
-HEALTHY_COLOR = "#7f7f7f"
-
-
-def render_error_rates(impacted: list[str], healthy: list[str]) -> None:
-    frames, colors = {}, []
+def render_error_rates(impacted: list[str], healthy: list[str], deploys) -> None:
+    rows, colors, domain = [], [], []
     for n, service in enumerate(impacted + healthy):
         metrics = api_client.service_metrics(service, minutes=30)
-        if metrics and metrics["series"]:
-            series = pd.DataFrame(metrics["series"])
-            frames[service] = series.set_index(pd.to_datetime(series["@timestamp"]))["error_rate"]
-            is_healthy = n >= len(impacted)
-            colors.append(
-                HEALTHY_COLOR if is_healthy else IMPACTED_COLORS[n % len(IMPACTED_COLORS)]
+        if not metrics or not metrics["series"]:
+            continue
+        for point in metrics["series"]:
+            rows.append(
+                {
+                    "time": pd.to_datetime(point["@timestamp"]),
+                    "service": service,
+                    "error_rate": point["error_rate"] * 100,
+                }
             )
-    if frames:
-        st.subheader("Error rate, last 30 minutes")
-        st.caption("Impacted services in color, ruled-out services in gray.")
-        st.line_chart(pd.DataFrame(frames) * 100, y_label="% of requests failing", color=colors)
+        domain.append(service)
+        is_healthy = n >= len(impacted)
+        colors.append(
+            HEALTHY_LINE_COLOR
+            if is_healthy
+            else IMPACTED_LINE_COLORS[n % len(IMPACTED_LINE_COLORS)]
+        )
+    if not rows:
+        return
+
+    lines = (
+        alt.Chart(pd.DataFrame(rows))
+        .mark_line(strokeWidth=2.2)
+        .encode(
+            x=alt.X("time:T", title=None, axis=alt.Axis(format="%H:%M", grid=False)),
+            y=alt.Y("error_rate:Q", title="% of requests failing"),
+            color=alt.Color(
+                "service:N",
+                scale=alt.Scale(domain=domain, range=colors),
+                legend=alt.Legend(orient="top", title=None),
+            ),
+            tooltip=["service", alt.Tooltip("time:T", format="%H:%M"), "error_rate:Q"],
+        )
+    )
+    chart = lines
+    if deploys:
+        marks = pd.DataFrame(
+            [{"time": pd.to_datetime(t), "label": f"🚀 {label}"} for t, label in deploys]
+        )
+        rule = alt.Chart(marks).mark_rule(strokeDash=[4, 4], color="#4F46E5").encode(x="time:T")
+        text = (
+            alt.Chart(marks)
+            .mark_text(align="left", dx=6, dy=-6, color="#4F46E5", fontWeight=600)
+            .encode(x="time:T", y=alt.value(12), text="label:N")
+        )
+        chart = lines + rule + text
+
+    with st.container(border=True):
+        st.markdown("**Error rate, last 30 minutes**")
+        st.caption("Impacted services in color, ruled-out services in gray, deploys dashed.")
+        st.altair_chart(chart.properties(height=260), use_container_width=True)
+
+
+def kpi(col, label: str, value: str) -> None:
+    with col.container(border=True):
+        st.markdown(
+            f'<div class="kpi-label">{html.escape(label)}</div>'
+            f'<div class="kpi-value">{html.escape(value)}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_report(incident: dict) -> None:
     report = incident["report"]
     rc = report["root_cause"]
-    color = SEVERITY_COLOR[report["severity"]]
-    st.subheader(f":{color}-background[{report['severity']}] {report['title']}")
-    st.markdown(report["summary"])
 
-    cols = st.columns([2, 1, 1, 1])
-    cols[0].metric("Root cause", rc["service"])
-    cols[1].metric("Confidence", rc["confidence"].title())
-    cols[2].metric("Impacted services", len(report["impacted_services"]))
-    cols[3].metric("Tool calls", len(incident["trace"]))
+    with st.container(border=True):
+        fg, bg = SEVERITY[report["severity"]]
+        st.markdown(pill(report["severity"], fg, bg), unsafe_allow_html=True)
+        st.subheader(report["title"])
+        st.markdown(report["summary"])
 
-    st.error(f"**Root cause:** {rc['hypothesis']}\n\n**Trigger:** {rc['trigger']}", icon="🎯")
-    st.markdown(f"**Impact:** {report['impact']}")
+    cols = st.columns(4)
+    kpi(cols[0], "Root cause", rc["service"])
+    kpi(cols[1], "Confidence", rc["confidence"].title())
+    kpi(cols[2], "Impacted", str(len(report["impacted_services"])))
+    kpi(cols[3], "Steps", str(len(incident["trace"])))
 
-    left, right = st.columns(2)
-    left.markdown(
-        "**Impacted:** " + " ".join(f":red-badge[{s}]" for s in report["impacted_services"])
+    left, right = st.columns([3, 2], gap="medium")
+    with left.container(border=True):
+        st.markdown("**🎯 Root cause**")
+        st.markdown(rc["hypothesis"])
+        st.caption(f"Trigger: {rc['trigger']}")
+    with right.container(border=True):
+        st.markdown("**💥 Blast radius**")
+        st.markdown(
+            "".join(pill(s, COLORS["bad"], COLORS["bad_bg"]) for s in report["impacted_services"])
+            + "".join(
+                pill(f"✓ {s}", COLORS["ok"], COLORS["ok_bg"]) for s in report["healthy_services"]
+            ),
+            unsafe_allow_html=True,
+        )
+        st.caption(report["impact"])
+
+    with st.container(border=True):
+        st.markdown("**✅ Next steps**")
+        steps = report["next_steps"]
+        if steps:
+            st.markdown(
+                f'<div class="step-now"><b>Do now:</b> {html.escape(steps[0])}</div>'
+                + "".join(
+                    f'<div class="step">{n}. {html.escape(s)}</div>'
+                    for n, s in enumerate(steps[1:], 2)
+                ),
+                unsafe_allow_html=True,
+            )
+        if report["runbook"]:
+            st.caption(f"Runbook: {report['runbook']}")
+
+    render_error_rates(
+        report["impacted_services"], report["healthy_services"], deploy_times(incident["trace"])
     )
-    right.markdown(
-        "**Ruled out:** " + " ".join(f":green-badge[{s}]" for s in report["healthy_services"])
-    )
-
-    st.markdown("#### Next steps")
-    st.markdown("\n".join(f"{n}. {step}" for n, step in enumerate(report["next_steps"], 1)))
-    if report["runbook"]:
-        st.caption(f"Runbook: `{report['runbook']}`")
-
-    render_error_rates(report["impacted_services"], report["healthy_services"])
 
     with st.expander("Evidence", expanded=True):
         st.markdown("\n".join(f"- `{e['tool']}`: {e['finding']}" for e in report["evidence"]))
     with st.expander("Timeline"):
         st.markdown("\n".join(f"- **{t['time']}** {t['event']}" for t in report["timeline"]))
 
-    st.download_button(
-        "Download report (Markdown)",
+    bottom = st.columns([1, 2])
+    bottom[0].download_button(
+        "Download report",
         api_client.get_report_markdown(incident["id"]),
         file_name=f"{incident['id']}.md",
+        icon="⬇️",
     )
     usage = incident.get("usage") or {}
     if usage:
         cached = usage.get("cache_read_input_tokens", 0)
         total_in = sum(usage.get(k, 0) for k in ("input_tokens", "cache_creation_input_tokens"))
-        st.caption(
+        bottom[1].caption(
             f"Tokens: {total_in + cached:,} in ({cached:,} from cache) · "
             f"{usage.get('output_tokens', 0):,} out"
         )
@@ -181,14 +328,20 @@ def incident_view(incident_id: str) -> None:
     incident = api_client.get_incident(incident_id)
     alert = incident["alert"]
     investigating = incident["status"] == "investigating"
+    label, fg, bg = STATUS[incident["status"]]
 
-    st.title(alert["title"])
-    st.caption(
-        f"{STATUS_ICON[incident['status']]} {incident['status']} · {incident['id']} · "
-        f"fired {alert['date'][:19].replace('T', ' ')} UTC · " + " ".join(alert["tags"])
+    st.markdown(
+        f'<div class="eyebrow">Alert · {html.escape(incident["id"])}</div>'
+        f'<div class="alert-title">{html.escape(alert["title"])}</div>'
+        f'<div class="meta">{pill(label, fg, bg)}'
+        f"fired {alert['date'][11:19]} UTC &nbsp; "
+        + "".join(f'<span class="tag">{html.escape(t)}</span>' for t in alert["tags"])
+        + "</div>",
+        unsafe_allow_html=True,
     )
+    st.write("")
 
-    report_col, trace_col = st.columns([3, 2], gap="large")
+    report_col, trace_col = st.columns([5, 3], gap="large")
     with trace_col:
         render_trace(incident["trace"], investigating)
         with st.expander("Alert payload"):
@@ -199,8 +352,11 @@ def incident_view(incident_id: str) -> None:
         elif incident["status"] == "failed":
             st.error(f"Investigation failed: {incident['error']}")
         else:
-            st.subheader("Report")
-            st.caption("The report appears here when the investigation is done.")
+            with st.container(border=True):
+                st.markdown("**📝 Report**")
+                st.caption(
+                    "The agent is following the evidence. The report appears here when it is done."
+                )
 
     # Stop polling once the agent is done; a full rerun refreshes the sidebar too.
     if st.session_state.get("was_investigating") and not investigating:

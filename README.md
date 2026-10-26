@@ -7,11 +7,23 @@
 
 > **All data in this project is synthetic.** No real systems, customers or logs are used.
 
-🚧 **Status:** early development. The first end-to-end scenario, *"5xx spike after a deploy"*, is in progress.
+**Status:** MVP complete. One end-to-end scenario, *"5xx spike after a deploy"*, from webhook to report, with a ground-truth eval.
+
+<!-- Screenshot: add docs/screenshot.png from a real run and reference it here. -->
 
 ## Why
 
 When an alert fires, the first 10–15 minutes of on-call go to the same routine: open the dashboard, pull logs for the window, check what was deployed, look at downstream services, find the runbook. This project hands that routine to an agent, so the engineer starts from a written hypothesis instead of a blank screen.
+
+## The scenario
+
+A small shop: `api-gateway → checkout → payments → postgres`, plus `inventory`.
+At T+0, `payments v2.4.0` ships with its DB connection pool cut from 50 to 5. Two minutes later
+requests start timing out waiting for a connection: `payments` returns 503, `checkout` returns 502,
+and the monitor fires on **`api-gateway`** at T+5 with ~18% 5xx. `inventory` stays healthy.
+
+The alert points at the gateway; the root cause is two hops downstream. The full timeline and the
+expected conclusion live in [`scenarios/5xx_after_deploy.yaml`](scenarios/5xx_after_deploy.yaml).
 
 ## How it works
 
@@ -146,16 +158,6 @@ Interactive docs are at `/docs`. Ready-made requests are in [`api/requests.http`
 [Postman collection](api/ai-incident-copilot.postman_collection.json) that chains the incident id
 between requests.
 
-## The scenario
-
-A small shop: `api-gateway → checkout → payments → postgres`, plus `inventory`.
-At T+0, `payments v2.4.0` ships with its DB connection pool cut from 50 to 5. Two minutes later
-requests start timing out waiting for a connection: `payments` returns 503, `checkout` returns 502,
-and the monitor fires on **`api-gateway`** at T+5 with ~18% 5xx. `inventory` stays healthy.
-
-The alert points at the gateway; the root cause is two hops downstream. The full timeline and the
-expected conclusion live in [`scenarios/5xx_after_deploy.yaml`](scenarios/5xx_after_deploy.yaml).
-
 ## Evaluation
 
 An agent that sounds confident is not the same as an agent that is right. `make eval` runs the
@@ -175,6 +177,36 @@ Results land in [`evals/results/`](evals/results/): one JSON per eval with every
 `latest.md` with a pass/fail table. The [Eval workflow](.github/workflows/eval.yml) runs the same
 thing in GitHub Actions on demand. The scoring itself is unit-tested, so CI checks the grader
 without calling the API.
+
+## Design decisions
+
+- **A hand-written tool-use loop, not a framework.** Every tool call is recorded with its input,
+  result and duration, and streamed to the UI. The loop also owns the guardrails: a turn limit,
+  validated tool arguments, and errors handed back to the model instead of crashing the run.
+- **Tools return summaries, not raw logs.** `search_logs` returns counts by level, status code and
+  version, plus the top messages, so the model reasons over a few hundred tokens instead of
+  thousands of lines. That keeps it fast, cheap and focused.
+- **A structured report.** The final answer is constrained to a JSON schema generated from a
+  Pydantic model, so the API, the UI and the eval all consume the same typed object.
+- **Graded against ground truth.** The scenario file holds the expected answer, and the eval
+  checks every run against it. "It looked right in the demo" is not a test.
+- **Built like on-call tooling.** The webhook acknowledges at once and investigates in the
+  background, ignores recoveries, deduplicates retries, and can require a shared secret.
+
+## Project layout
+
+```
+app/
+  agent/       tool-use loop, prompts, report schema, tool definitions
+  api/         FastAPI: webhook, incidents, metrics
+  tools/       search_logs, get_metrics, get_deploy_events, get_service_map, get_runbook
+  incidents/   in-memory incident store
+ui/            Streamlit app (talks only to the API)
+generator/     synthetic logs, metrics and deploys from a scenario file
+scenarios/     the incident timeline and its ground truth
+evals/         grading against ground truth, results
+catalog/       service map        runbooks/   on-call runbooks
+```
 
 ## Tech stack
 

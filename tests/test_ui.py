@@ -93,6 +93,7 @@ def test_api_down_shows_how_to_start_it(monkeypatch):
 def test_empty_state(fake_api):
     at = run()
     assert at.header[0].value == "No incidents yet"
+    assert "Fire sample alert" in at.info[0].value
 
 
 def test_investigating_shows_live_trace(fake_api):
@@ -100,6 +101,7 @@ def test_investigating_shows_live_trace(fake_api):
     at = run()
     assert not at.exception
     assert "investigating" in at.info[0].value
+    assert "Investigating" in "".join(m.value for m in at.markdown)
     assert "get_deploy_events" in at.expander[0].label
     assert "11:30–now" in at.expander[0].label
 
@@ -108,9 +110,11 @@ def test_resolved_shows_report(fake_api):
     fake_api["incident"] = incident("resolved", report=REPORT)
     at = run()
     assert not at.exception
-    assert [m.value for m in at.metric][:2] == ["payments", "High"]
-    assert "pool max_size 5" in at.error[0].value
-    assert any("Roll back payments" in m.value for m in at.markdown)
+    text = "".join(m.value for m in at.markdown)
+    assert 'kpi-value">payments<' in text
+    assert 'kpi-value">High<' in text
+    assert "pool max_size 5" in text
+    assert "<b>Do now:</b> Roll back payments to v2.3.0" in text
 
 
 def test_failed_shows_error(fake_api):
