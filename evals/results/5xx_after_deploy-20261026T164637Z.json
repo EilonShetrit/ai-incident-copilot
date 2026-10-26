@@ -1,0 +1,446 @@
+{
+  "scenario": "5xx_after_deploy",
+  "model": "claude-opus-5-5",
+  "date": "2026-10-26 16:46 UTC",
+  "score": 0.8888888888888888,
+  "runs": [
+    {
+      "passed": 5,
+      "total": 6,
+      "checks": [
+        {
+          "name": "root_cause_service",
+          "passed": true,
+          "detail": "said 'payments', expected 'payments'"
+        },
+        {
+          "name": "root_cause_explained",
+          "passed": true,
+          "detail": "mentions v2.4.0, pool"
+        },
+        {
+          "name": "impacted_services",
+          "passed": true,
+          "detail": "said ['api-gateway', 'checkout', 'payments'], expected ['api-gateway', 'checkout', 'payments']"
+        },
+        {
+          "name": "healthy_ruled_out",
+          "passed": true,
+          "detail": "ruled out ['inventory'], expected ['inventory']"
+        },
+        {
+          "name": "mitigation_first",
+          "passed": false,
+          "detail": "first step: 'Roll payments back from v2.4.0 to v2.3.0 now (deploy_regression runbook step 3). Do not wait for a fix-forward.'"
+        },
+        {
+          "name": "evidence_backed",
+          "passed": true,
+          "detail": "evidence from 4 tools: ['get_deploy_events', 'get_metrics', 'get_service_map', 'search_logs']"
+        }
+      ],
+      "seconds": 47.7,
+      "turns": 6,
+      "tool_calls": 15,
+      "usage": {
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 19786,
+        "cache_read_input_tokens": 61598,
+        "output_tokens": 4388
+      },
+      "report": {
+        "title": "Checkout failures (api-gateway 5xx up to 32.5%) caused by a too-small DB connection pool in payments v2.4.0",
+        "severity": "SEV2",
+        "summary": "Since 16:36Z, payments v2.4.0 has been returning 503s. The deploy at 16:34Z cut its DB connection pool from 50 to 5, so requests time out waiting for a connection. The errors pass up through checkout (502) to api-gateway (502), where the 5xx rate climbed from 0% to 22.5% at 16:37Z and reached 32.5% at 16:43Z. Mitigation: roll payments back to v2.3.0.",
+        "impact": "Starting 16:37Z, 7.5%\u201332.5% of api-gateway requests per minute fail with 5xx (about 1,000 requests/min). The rate is trending up: 10% at 16:40, 25% at 16:42, 32.5% at 16:43. Gateway p95 latency rose from about 180ms to 4.3\u20134.8s. Affected users are those whose checkout/order requests reach payments authorize/capture. Payments itself has been failing 12.5%\u201325% of requests since 16:36Z. Requests that do succeed still see p95 latency above 4s. Data-at-risk was not checked.",
+        "impacted_services": [
+          "payments",
+          "checkout",
+          "api-gateway"
+        ],
+        "healthy_services": [
+          "inventory"
+        ],
+        "root_cause": {
+          "service": "payments",
+          "hypothesis": "Payments v2.4.0 ('Refactor DB client config loading') starts with pool.max_size=5 instead of 50. At the same traffic (1,000 req/min) the 5-connection pool is fully used. Requests wait 3000ms for a connection, then fail with TimeoutError/503, and checkout and api-gateway pass the failure on as 502s.",
+          "trigger": "Deploy of payments v2.3.0 -> v2.4.0 at 2026-10-26T16:34:00Z (commit 9f3c2ab, ci-bot, 'Refactor DB client config loading')",
+          "confidence": "high"
+        },
+        "evidence": [
+          {
+            "tool": "get_metrics",
+            "finding": "api-gateway (v1.12.3, no version change): error_rate was 0.0 from 16:09 to 16:36. It jumped to 0.225 at 16:37, then 0.075, 0.15, 0.10, 0.175, 0.25 and 0.325 at 16:43. p95 latency went from about 170\u2013190ms to 4310\u20134839ms. Requests stayed flat at 1,000/min."
+          },
+          {
+            "tool": "search_logs",
+            "finding": "api-gateway, 16:00\u201316:44: 53 ERROR lines. 52 are 502 'upstream checkout returned 502 Bad Gateway', spread across api-gateway-1, -2 and -3. 1 is a generic 500."
+          },
+          {
+            "tool": "get_service_map",
+            "finding": "Call chain: api-gateway -> checkout -> {payments, inventory}; payments -> postgres. checkout is the gateway's only dependency."
+          },
+          {
+            "tool": "get_metrics",
+            "finding": "checkout (v3.8.0, unchanged): error_rate was 0.0 until 16:36, then 0.15\u20130.20 from 16:37 to 16:43. p95 went from about 150ms to 4308\u20134700ms."
+          },
+          {
+            "tool": "search_logs",
+            "finding": "checkout, 16:30\u201316:44: 39 ERROR lines, all 502 'upstream payments returned 503 Service Unavailable', on checkout-1, -2 and -3."
+          },
+          {
+            "tool": "get_deploy_events",
+            "finding": "Only one deploy between 16:00 and 16:44: payments v2.3.0 -> v2.4.0 at 16:34:00Z, commit 9f3c2ab, 'Refactor DB client config loading', status succeeded."
+          },
+          {
+            "tool": "get_metrics",
+            "finding": "payments: on v2.3.0, db_pool_max was 50 and db_pool_active 18, error_rate about 0, p95 about 115\u2013127ms. From 16:34 on v2.4.0, db_pool_max is 5 and db_pool_active stays at 5 (fully used). error_rate is 0.125\u20130.25 from 16:36 and p95 is 4043\u20134336ms."
+          },
+          {
+            "tool": "search_logs",
+            "finding": "payments, 16:30\u201316:44: 561 lines. 67 are ERROR 503 'TimeoutError: could not acquire connection from pool (max_size=5, timeout=3000ms)', all sampled on v2.4.0. One startup line at 16:34:20Z on payments-1: 'db client initialized: pool.max_size=5 pool.timeout_ms=3000'."
+          },
+          {
+            "tool": "get_metrics",
+            "finding": "inventory (v1.4.2): error_rate 0.0 except a single 0.025 blip at 16:41. p95 steady at 56\u201364ms. Not affected."
+          },
+          {
+            "tool": "get_metrics",
+            "finding": "postgres: no metrics returned, and search_logs returned 0 log lines. Postgres health cannot be confirmed directly. Still, payments errors are pool-acquire timeouts on the client side, not DB errors, and the pool size changed with the deploy."
+          }
+        ],
+        "timeline": [
+          {
+            "time": "2026-10-26T16:33:00Z",
+            "event": "Baseline: payments v2.3.0 has db_pool_max=50, db_pool_active=18, about 0% errors. Gateway, checkout and payments are all healthy."
+          },
+          {
+            "time": "2026-10-26T16:34:00Z",
+            "event": "payments v2.3.0 -> v2.4.0 deployed (commit 9f3c2ab, 'Refactor DB client config loading'). db_pool_max drops to 5."
+          },
+          {
+            "time": "2026-10-26T16:34:20Z",
+            "event": "payments-1 logs 'db client initialized: pool.max_size=5 pool.timeout_ms=3000'."
+          },
+          {
+            "time": "2026-10-26T16:36:00Z",
+            "event": "payments error_rate reaches 25% with p95 4149ms. Pool is fully used (5/5) and connection-acquire timeouts begin."
+          },
+          {
+            "time": "2026-10-26T16:37:00Z",
+            "event": "checkout error_rate reaches 15% (502s from payments 503s). api-gateway error_rate reaches 22.5% with p95 4533ms."
+          },
+          {
+            "time": "2026-10-26T16:39:10Z",
+            "event": "Datadog alert fires: api-gateway 5xx rate is 18.4% over 5 minutes (threshold 5%)."
+          },
+          {
+            "time": "2026-10-26T16:43:00Z",
+            "event": "api-gateway error_rate reaches 32.5%, the highest so far. The incident is ongoing and getting worse."
+          }
+        ],
+        "next_steps": [
+          "Roll payments back from v2.4.0 to v2.3.0 now (deploy_regression runbook step 3). Do not wait for a fix-forward.",
+          "Check recovery within about 5 minutes of the rollback: payments db_pool_max back at 50, payments, checkout and api-gateway error_rate back near 0%, and p95 back to about 120ms, 150ms and 180ms respectively.",
+          "Post in the incident channel: checkout/payment requests through api-gateway are failing at up to 32.5% since 16:37Z, cause is payments v2.4.0 pool size 5 (was 50), rollback in progress. Update every 15 minutes.",
+          "Page or ticket the payments team with the evidence: deploy 9f3c2ab at 16:34Z, startup line pool.max_size=5, 67 pool-acquire TimeoutErrors, and the config diff (pool size 50 -> 5). The refactored config loading probably falls back to a default instead of reading the configured pool size.",
+          "Confirm postgres health separately. No postgres metrics or logs were available in this investigation.",
+          "Follow-up: add an alert on payments db_pool_active/db_pool_max saturation, and a pre-deploy check that compares the effective pool config against the previous version."
+        ],
+        "runbook": "high_5xx_rate"
+      }
+    },
+    {
+      "passed": 5,
+      "total": 6,
+      "checks": [
+        {
+          "name": "root_cause_service",
+          "passed": true,
+          "detail": "said 'payments', expected 'payments'"
+        },
+        {
+          "name": "root_cause_explained",
+          "passed": true,
+          "detail": "mentions v2.4.0, pool"
+        },
+        {
+          "name": "impacted_services",
+          "passed": true,
+          "detail": "said ['api-gateway', 'checkout', 'payments'], expected ['api-gateway', 'checkout', 'payments']"
+        },
+        {
+          "name": "healthy_ruled_out",
+          "passed": true,
+          "detail": "ruled out ['inventory'], expected ['inventory']"
+        },
+        {
+          "name": "mitigation_first",
+          "passed": false,
+          "detail": "first step: 'Roll payments back from v2.4.0 to v2.3.0 now, as the deploy_regression runbook says. Do not wait for a fix-forward.'"
+        },
+        {
+          "name": "evidence_backed",
+          "passed": true,
+          "detail": "evidence from 3 tools: ['get_deploy_events', 'get_metrics', 'search_logs']"
+        }
+      ],
+      "seconds": 50.0,
+      "turns": 6,
+      "tool_calls": 15,
+      "usage": {
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 20183,
+        "cache_read_input_tokens": 63029,
+        "output_tokens": 4417
+      },
+      "report": {
+        "title": "Checkout failures: payments v2.4.0 shrank its DB connection pool from 50 to 5, causing pool timeouts and 5xx errors at api-gateway",
+        "severity": "SEV2",
+        "summary": "api-gateway 5xx errors began at 16:37 UTC. Since then they have been between 7.5% and 32.5% per minute, and p95 latency has been about 4.5s. Nearly all of them are 502s passed up from checkout, which in turn is passing up 503s from payments. The payments deploy v2.3.0\u2192v2.4.0 at 16:34 ('Refactor DB client config loading') started with pool.max_size=5 instead of 50. The pool has been full at 5/5 ever since, and requests fail with 'could not acquire connection from pool (timeout=3000ms)'. The fix is to roll payments back to v2.3.0.",
+        "impact": "Starting 2026-10-26T16:37Z and still ongoing at 16:43Z: 7.5%\u201332.5% of public api-gateway requests fail each minute, and the rate was rising (32.5% at 16:43). Gateway p95 latency went from about 180ms to 4.3\u20134.8s. Checkout/order submission is affected because payment authorize/capture calls fail with 503 (payments error rate 12.5\u201325%, p95 about 4.1\u20134.3s).",
+        "impacted_services": [
+          "api-gateway",
+          "checkout",
+          "payments"
+        ],
+        "healthy_services": [
+          "inventory"
+        ],
+        "root_cause": {
+          "service": "payments",
+          "hypothesis": "The DB client config refactor in payments v2.4.0 loads pool.max_size=5 where v2.3.0 had 50. Under normal load v2.3.0 kept 18 connections active, so the 5-connection pool is full. Requests wait the full 3000ms pool timeout and return 503, which checkout turns into a 502 and api-gateway passes to users.",
+          "trigger": "payments deploy v2.3.0 \u2192 v2.4.0 (commit 9f3c2ab, ci-bot, 'Refactor DB client config loading') at 2026-10-26T16:34:00Z",
+          "confidence": "high"
+        },
+        "evidence": [
+          {
+            "tool": "get_metrics",
+            "finding": "api-gateway (v1.12.3, no version change): error_rate was 0 from 16:09 to 16:36. It then went to 0.225 at 16:37, 0.075, 0.15, 0.10, 0.175, 0.25, and 0.325 at 16:43. p95 latency went from about 170\u2013190ms to 4310\u20134839ms. Traffic held steady at 1000 req/min."
+          },
+          {
+            "tool": "search_logs",
+            "finding": "api-gateway ERROR logs from 16:00 to 16:45: 53 total. 52 are 502 'upstream checkout returned 502 Bad Gateway' and 1 is a 500. They come from all three gateway hosts."
+          },
+          {
+            "tool": "get_metrics",
+            "finding": "checkout (v3.8.0, no version change): error_rate was 0 until 16:36, then 0.075\u20130.20 from 16:37. p95 went from about 150ms to 4308\u20134700ms."
+          },
+          {
+            "tool": "search_logs",
+            "finding": "checkout ERROR logs: 43 total. 39 are 502 'upstream payments returned 503 Service Unavailable' and 4 are 500s."
+          },
+          {
+            "tool": "get_deploy_events",
+            "finding": "The only deploy between 16:05 and 16:45 was payments v2.3.0\u2192v2.4.0 at 16:34:00Z. Commit 9f3c2ab by ci-bot, 'Refactor DB client config loading', status succeeded."
+          },
+          {
+            "tool": "get_metrics",
+            "finding": "payments: on v2.3.0 (through 16:33), db_pool_max=50, db_pool_active=18, error_rate about 0, p95 about 115\u2013127ms. From the switch to v2.4.0 at 16:34, db_pool_max=5 and db_pool_active=5 (full). error_rate went to 0.25 at 16:36 and has stayed at 0.125\u20130.25. p95 has been 4043\u20134336ms."
+          },
+          {
+            "tool": "search_logs",
+            "finding": "payments ERROR logs: 70 total. 67 are 503 'TimeoutError: could not acquire connection from pool (max_size=5, timeout=3000ms)', all from v2.4.0. Only 3 generic 500s came from v2.3.0."
+          },
+          {
+            "tool": "search_logs",
+            "finding": "Startup line from payments v2.4.0 on payments-1 at 16:34:20Z: 'db client initialized: pool.max_size=5 pool.timeout_ms=3000'. Pool-timeout errors on payments-3 also report max_size=5."
+          },
+          {
+            "tool": "get_metrics",
+            "finding": "inventory (v1.4.2), the sibling dependency of checkout, is healthy: error_rate 0\u20130.025 and p95 56\u201364ms for all of 16:25\u201316:43."
+          },
+          {
+            "tool": "get_metrics",
+            "finding": "There are no metrics or logs for postgres, so it could not be checked directly. The errors are client-side pool acquisition timeouts in payments, not database errors."
+          }
+        ],
+        "timeline": [
+          {
+            "time": "2026-10-26T16:33:00Z",
+            "event": "Last minute of payments v2.3.0: db_pool_max=50, db_pool_active=18, error_rate 0"
+          },
+          {
+            "time": "2026-10-26T16:34:00Z",
+            "event": "payments v2.4.0 deployed (commit 9f3c2ab, 'Refactor DB client config loading'); db_pool_max drops to 5 and the pool is immediately full at 5/5"
+          },
+          {
+            "time": "2026-10-26T16:34:20Z",
+            "event": "payments-1 logs 'db client initialized: pool.max_size=5 pool.timeout_ms=3000'"
+          },
+          {
+            "time": "2026-10-26T16:36:00Z",
+            "event": "payments error_rate jumps to 25% and p95 to 4149ms (connection pool timeouts, 503)"
+          },
+          {
+            "time": "2026-10-26T16:37:00Z",
+            "event": "checkout error_rate reaches 15% (502s passed up from payments); api-gateway error_rate reaches 22.5% and p95 4533ms"
+          },
+          {
+            "time": "2026-10-26T16:40:01Z",
+            "event": "Datadog alert fires: api-gateway 5xx rate 18.4% over 5 minutes (threshold 5%)"
+          },
+          {
+            "time": "2026-10-26T16:43:00Z",
+            "event": "api-gateway error_rate is 32.5%, the highest so far; incident still ongoing"
+          }
+        ],
+        "next_steps": [
+          "Roll payments back from v2.4.0 to v2.3.0 now, as the deploy_regression runbook says. Do not wait for a fix-forward.",
+          "Check recovery within about 5 minutes: payments db_pool_max should be back at 50 and active connections no longer stuck at the cap, the pool-timeout errors should stop, and checkout and api-gateway error rates should return to about 0% and p95 to about 150\u2013190ms. Then confirm the Datadog alert resolves.",
+          "If a rollback is blocked, override the payments DB pool max_size back to 50 through config or env and restart the payments pods as a stopgap.",
+          "Open a ticket for the payments team with the deploy (9f3c2ab at 16:34), the first errors (16:36), the TimeoutError messages, and the pool config change (max_size 50\u21925). They should find out why the refactored config loader falls back to a pool size of 5.",
+          "Add a payments alert on db pool saturation (db_pool_active/db_pool_max \u2265 0.9) and a pre-deploy or canary check that compares the effective DB pool config with the previous version.",
+          "Get postgres metrics or logs from data-platform. They were not available during this investigation, and they would confirm the database itself was healthy."
+        ],
+        "runbook": "deploy_regression"
+      }
+    },
+    {
+      "passed": 6,
+      "total": 6,
+      "checks": [
+        {
+          "name": "root_cause_service",
+          "passed": true,
+          "detail": "said 'payments', expected 'payments'"
+        },
+        {
+          "name": "root_cause_explained",
+          "passed": true,
+          "detail": "mentions v2.4.0, pool"
+        },
+        {
+          "name": "impacted_services",
+          "passed": true,
+          "detail": "said ['api-gateway', 'checkout', 'payments'], expected ['api-gateway', 'checkout', 'payments']"
+        },
+        {
+          "name": "healthy_ruled_out",
+          "passed": true,
+          "detail": "ruled out ['inventory'], expected ['inventory']"
+        },
+        {
+          "name": "mitigation_first",
+          "passed": true,
+          "detail": "first step: \"Roll back payments from v2.4.0 to v2.3.0 now (deploy_regression runbook step 3). Don't wait for a fix-forward.\""
+        },
+        {
+          "name": "evidence_backed",
+          "passed": true,
+          "detail": "evidence from 3 tools: ['get_deploy_events', 'get_metrics', 'search_logs']"
+        }
+      ],
+      "seconds": 44.1,
+      "turns": 5,
+      "tool_calls": 15,
+      "usage": {
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 20537,
+        "cache_read_input_tokens": 44073,
+        "output_tokens": 4578
+      },
+      "report": {
+        "title": "payments v2.4.0 shrank DB connection pool from 50 to 5, so checkout and api-gateway return 5xx errors",
+        "severity": "SEV2",
+        "summary": "Since 16:38Z, api-gateway has been returning 5xx errors on 7.5\u201332.5% of requests, and the rate is still climbing (32.5% at 16:44). Almost all of them are 502s passed up from checkout, and checkout's errors are 503s passed up from payments. payments v2.4.0 was deployed at 16:35Z ('Refactor DB client config loading'). It starts with pool.max_size=5 instead of 50, the pool sits at 5 of 5, and requests time out waiting for a DB connection. The fix is to roll payments back to v2.3.0.",
+        "impact": "Public API traffic through api-gateway, which routes to checkout, which calls payments. Since 2026-10-26T16:38Z, api-gateway has failed between 7.5% and 32.5% of about 1000 requests per minute (18.4% over 5 minutes at alert time, 32.5% at 16:44). Its p95 latency went from about 180ms to 4.3\u20134.8s. Failed requests are failed order submissions and payment authorizations/captures. Inventory is not affected.",
+        "impacted_services": [
+          "api-gateway",
+          "checkout",
+          "payments"
+        ],
+        "healthy_services": [
+          "inventory"
+        ],
+        "root_cause": {
+          "service": "payments",
+          "hypothesis": "The payments v2.4.0 refactor of DB client config loading set the Postgres connection pool to max_size=5 (v2.3.0 ran with 50, about 18 in use). The pool fills up, requests wait out the 3000ms timeout, and payments returns 503s. Checkout passes these up as 502s, and so does api-gateway. Postgres itself returned no metrics or logs, so I couldn't check it directly. Because payments is the side hitting its own cap of 5, the bottleneck looks client-side.",
+          "trigger": "Deploy of payments v2.3.0 -> v2.4.0 at 2026-10-26T16:35:00Z (commit 9f3c2ab, ci-bot, 'Refactor DB client config loading')",
+          "confidence": "high"
+        },
+        "evidence": [
+          {
+            "tool": "get_metrics",
+            "finding": "api-gateway (v1.12.3, unchanged): error_rate was about 0 from 16:00 to 16:37 (one 2.5% blip at 16:00 and one at 16:09). It jumped to 22.5% at 16:38, then ran 7.5\u201325%, reaching 32.5% at 16:44. p95 latency went from about 170\u2013190ms to 4310\u20134839ms. Traffic held steady at 1000 requests per minute."
+          },
+          {
+            "tool": "search_logs",
+            "finding": "api-gateway, 16:00\u201316:45, ERROR: 54 errors. 52 were 502 'upstream checkout returned 502 Bad Gateway' and 2 were 500, spread across api-gateway-1, -2 and -3."
+          },
+          {
+            "tool": "get_metrics",
+            "finding": "checkout (v3.8.0, unchanged): error_rate was 0 until 16:37, then 15% at 16:38 and 7.5\u201320% through 16:44. p95 latency went from about 150ms to 4308\u20134700ms."
+          },
+          {
+            "tool": "search_logs",
+            "finding": "checkout, ERROR: 43 errors. 39 were 502 'upstream payments returned 503 Service Unavailable' and 4 were 500, on checkout-1, -2 and -3."
+          },
+          {
+            "tool": "get_deploy_events",
+            "finding": "The only deploy between 16:00 and 16:45 was payments v2.3.0 -> v2.4.0 at 16:35:00Z, commit 9f3c2ab, 'Refactor DB client config loading', status succeeded."
+          },
+          {
+            "tool": "get_metrics",
+            "finding": "payments: on v2.3.0 (up to 16:34), db_pool_max was 50, db_pool_active 18, error_rate about 0 and p95 about 115\u2013127ms. On v2.4.0 (from 16:35), db_pool_max was 5 and db_pool_active stayed pinned at 5. error_rate went from 0 to 25% at 16:37 and stayed at 12.5\u201325% after that, with p95 latency of 4043\u20134336ms."
+          },
+          {
+            "tool": "search_logs",
+            "finding": "payments, 16:30\u201316:45: 67 ERRORs (503), all 'TimeoutError: could not acquire connection from pool (max_size=5, timeout=3000ms)'. Every error sample was from v2.4.0 on payments-1, -2 and -3. The other 533 requests succeeded (200)."
+          },
+          {
+            "tool": "search_logs",
+            "finding": "payments startup line at 16:35:20Z on payments-1 (v2.4.0): 'db client initialized: pool.max_size=5 pool.timeout_ms=3000'."
+          },
+          {
+            "tool": "get_metrics",
+            "finding": "inventory (v1.4.2), the other dependency of checkout: error_rate was 0 the whole time except one 2.5% blip at 16:42, and p95 latency stayed at 56\u201364ms. It is healthy."
+          },
+          {
+            "tool": "get_metrics",
+            "finding": "postgres returned 0 metric points and search_logs returned 0 log lines, so I couldn't check the database itself."
+          }
+        ],
+        "timeline": [
+          {
+            "time": "2026-10-26T16:34:00Z",
+            "event": "Last minute on payments v2.3.0: pool 18 of 50 in use, error_rate 0, p95 122ms."
+          },
+          {
+            "time": "2026-10-26T16:35:00Z",
+            "event": "payments v2.4.0 deployed (commit 9f3c2ab, 'Refactor DB client config loading'). db_pool_max drops from 50 to 5."
+          },
+          {
+            "time": "2026-10-26T16:35:20Z",
+            "event": "payments-1 logs 'db client initialized: pool.max_size=5 pool.timeout_ms=3000'."
+          },
+          {
+            "time": "2026-10-26T16:37:00Z",
+            "event": "payments error_rate jumps to 25% and p95 to 4149ms. Pool connection timeouts begin."
+          },
+          {
+            "time": "2026-10-26T16:38:00Z",
+            "event": "checkout error_rate reaches 15% and api-gateway reaches 22.5%. Both show p95 latency above 4.5s."
+          },
+          {
+            "time": "2026-10-26T16:40:53Z",
+            "event": "Datadog alert fires: api-gateway 5xx rate at 18.4% over 5 minutes (threshold 5%)."
+          },
+          {
+            "time": "2026-10-26T16:44:00Z",
+            "event": "api-gateway error_rate reaches 32.5%. The incident is still going and not recovering."
+          }
+        ],
+        "next_steps": [
+          "Roll back payments from v2.4.0 to v2.3.0 now (deploy_regression runbook step 3). Don't wait for a fix-forward.",
+          "Confirm the rollback worked: payments db_pool_max should be back at 50 and the startup log should no longer say pool.max_size=5. payments, checkout and api-gateway error rates should be back near 0 within about 5 minutes, with p95 latency below 200ms.",
+          "Post in the incident channel: about 18\u201332% of api-gateway requests (checkout and payments paths) have been failing since 16:38Z, the cause is the payments v2.4.0 pool config, and the rollback is underway. Update every 15 minutes.",
+          "If errors continue after the rollback, look at Postgres directly. Neither metrics nor logs for it were available during this investigation.",
+          "Open a ticket for the payments team with the evidence: deploy 9f3c2ab at 16:35Z, first errors at 16:37Z, the pool-timeout errors, and the config diff (pool.max_size 50 -> 5). Fix how the refactored config loading reads the pool size before redeploying.",
+          "Add an alert on payments db_pool_active/db_pool_max saturation, plus a pre-deploy check that compares the DB pool config with the previous version."
+        ],
+        "runbook": "high_5xx_rate, then deploy_regression"
+      }
+    }
+  ]
+}
