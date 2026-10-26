@@ -173,6 +173,9 @@ against the scenario's `ground_truth`:
 | `mitigation_first` | The first next step is rolling back `payments` |
 | `evidence_backed` | The evidence cites at least three different tools |
 
+**Latest result: 18/18 checks passed over 3 runs** ([`latest.md`](evals/results/latest.md)), about
+45 seconds and 15 tool calls per investigation.
+
 Results land in [`evals/results/`](evals/results/): one JSON per eval with every report, and
 `latest.md` with a pass/fail table. The [Eval workflow](.github/workflows/eval.yml) runs the same
 thing in GitHub Actions on demand. The scoring itself is unit-tested, so CI checks the grader

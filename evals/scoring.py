@@ -18,8 +18,10 @@ class Check:
 
 
 def _norm(text: str) -> str:
-    # "Roll back" and "roll-back" both count as "rollback".
-    return re.sub(r"roll[\s-]+back", "rollback", text.lower())
+    # "Roll back", "roll-back", "roll payments back" and "revert" all count as "rollback".
+    text = text.lower()
+    text = re.sub(r"\broll\b((?:[\s-]+\S+){0,3}?)[\s-]+back\b", r"rollback\1", text)
+    return re.sub(r"\brevert\b", "rollback", text)
 
 
 def score(report: IncidentReport, truth: dict[str, Any]) -> list[Check]:

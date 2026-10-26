@@ -14,7 +14,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from app.agent import investigate
+from app.agent import IncidentReport, investigate
 from app.clients.opensearch import get_client
 from app.config import settings
 from app.models import DatadogAlert
@@ -56,7 +56,8 @@ def to_markdown(summary: dict) -> str:
         f"# Eval: {summary['scenario']}",
         "",
         f"{summary['date']} · model `{summary['model']}` · {len(runs)} runs · "
-        f"**{summary['score']:.0%}** of checks passed",
+        f"**{summary['score']:.0%}** of checks passed"
+        + (f" (re-graded {summary['regraded']})" if summary.get("regraded") else ""),
         "",
         "| Check | " + " | ".join(f"Run {n}" for n in range(1, len(runs) + 1)) + " |",
         "|---|" + "---|" * len(runs),
@@ -80,12 +81,37 @@ def to_markdown(summary: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def regrade(path: Path, scenario: dict) -> None:
+    summary = json.loads(path.read_text())
+    for run in summary["runs"]:
+        checks = score(IncidentReport.model_validate(run["report"]), scenario["ground_truth"])
+        run["checks"] = [asdict(c) for c in checks]
+        run["passed"], run["total"] = sum(c.passed for c in checks), len(checks)
+    summary["score"] = sum(r["passed"] for r in summary["runs"]) / sum(
+        r["total"] for r in summary["runs"]
+    )
+    summary["regraded"] = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+    path.write_text(json.dumps(summary, indent=2))
+    markdown = to_markdown(summary)
+    (RESULTS_DIR / "latest.md").write_text(markdown)
+    print(markdown)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Grade the agent against ground truth.")
     parser.add_argument("--scenario", default="scenarios/5xx_after_deploy.yaml")
     parser.add_argument("--alert", default="samples/alert_5xx.json")
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument(
+        "--regrade",
+        metavar="RESULTS_JSON",
+        help="Re-score the reports saved in a results file (no API calls), e.g. after a grader fix",
+    )
     args = parser.parse_args()
+
+    if args.regrade:
+        regrade(Path(args.regrade), load_scenario(args.scenario))
+        return
 
     if not settings.anthropic_api_key:
         sys.exit("ANTHROPIC_API_KEY is not set.")

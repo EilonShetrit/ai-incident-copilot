@@ -60,6 +60,19 @@ def test_mitigation_must_come_first():
     assert failed(score(report(next_steps=["Rollback payments to v2.3.0"]), TRUTH)) == []
 
 
+def test_rollback_phrasings_count():
+    # Phrasings from real eval runs that an earlier grader wrongly failed.
+    for step in [
+        "Roll payments back from v2.4.0 to v2.3.0 now (deploy_regression runbook step 3).",
+        "Revert payments to v2.3.0",
+        "Roll back payments to v2.3.0",
+    ]:
+        assert failed(score(report(next_steps=[step]), TRUTH)) == [], step
+    assert failed(score(report(next_steps=["Roll out a payments fix"]), TRUTH)) == [
+        "mitigation_first"
+    ]
+
+
 def test_thin_evidence_fails():
     evidence = [{"tool": "search_logs", "finding": "..."}]
     assert failed(score(report(evidence=evidence), TRUTH)) == ["evidence_backed"]

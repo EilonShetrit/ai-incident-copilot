@@ -2,10 +2,10 @@
   "scenario": "5xx_after_deploy",
   "model": "claude-opus-5-5",
   "date": "2026-10-21 11:41 UTC",
-  "score": 0.8888888888888888,
+  "score": 1.0,
   "runs": [
     {
-      "passed": 5,
+      "passed": 6,
       "total": 6,
       "checks": [
         {
@@ -30,7 +30,7 @@
         },
         {
           "name": "mitigation_first",
-          "passed": false,
+          "passed": true,
           "detail": "first step: \"Roll payments back from v2.4.0 to v2.3.0 now. Don't wait for a fix-forward.\""
         },
         {
@@ -301,7 +301,7 @@
       }
     },
     {
-      "passed": 5,
+      "passed": 6,
       "total": 6,
       "checks": [
         {
@@ -326,7 +326,7 @@
         },
         {
           "name": "mitigation_first",
-          "passed": false,
+          "passed": true,
           "detail": "first step: \"Roll payments back to v2.3.0 now, following the deploy_regression runbook. Don't wait for a fix-forward.\""
         },
         {
@@ -442,5 +442,6 @@
         "runbook": "high_5xx_rate"
       }
     }
-  ]
+  ],
+  "regraded": "2026-10-26 17:01 UTC"
 }
