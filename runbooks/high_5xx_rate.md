@@ -4,6 +4,8 @@
 
 ## 1. Confirm and scope
 - Check the error rate and request volume for the alerted service over the last 30 minutes.
+- Break the failures down by status code (460, 500, 501, 502, 503, 504). Report the actual codes,
+  never just "5xx": 503 and 502/504 point at different failures.
 - Note when the rate first rose above baseline. That time anchors the rest of the investigation.
 
 ## 2. Look for a recent change

@@ -24,6 +24,18 @@ def _norm(text: str) -> str:
     return re.sub(r"\brevert\b", "rollback", text)
 
 
+GENERIC_5XX = re.compile(r"\b5xx\b", re.IGNORECASE)
+
+
+def _generic_code_mentions(report: IncidentReport) -> list[str]:
+    """Report text that says "5xx" where it should name the actual status codes."""
+    texts = [report.title, report.summary, report.impact, report.failure_mode.why]
+    texts += [report.root_cause.hypothesis, report.root_cause.trigger]
+    texts += [e.finding for e in report.evidence] + report.next_steps
+    texts += [t.event for t in report.timeline]
+    return [t for t in texts if GENERIC_5XX.search(t)]
+
+
 def score(report: IncidentReport, truth: dict[str, Any]) -> list[Check]:
     rc = report.root_cause
     impacted, healthy = set(report.impacted_services), set(report.healthy_services)
@@ -40,6 +52,7 @@ def score(report: IncidentReport, truth: dict[str, Any]) -> list[Check]:
         groups = [groups]
     misses = [[k for k in g if k.lower() not in first_step] for g in groups]
     missing_step = [] if any(not m for m in misses) else min(misses, key=len)
+    generic = _generic_code_mentions(report)
     tools_cited = {e.tool for e in report.evidence}
     reported_codes = {(e.service, e.code) for e in report.error_codes}
     missing_codes = [
@@ -91,5 +104,10 @@ def score(report: IncidentReport, truth: dict[str, Any]) -> list[Check]:
             "evidence_backed",
             len(tools_cited) >= 3,
             f"evidence from {len(tools_cited)} tools: {sorted(tools_cited)}",
+        ),
+        Check(
+            "specific_codes",
+            not generic,
+            "names the actual status codes" if not generic else f"says 5xx in: {generic[0]!r}",
         ),
     ]

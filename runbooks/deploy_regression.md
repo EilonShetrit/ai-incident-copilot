@@ -17,7 +17,8 @@
 ## 3. Roll back
 - Roll back to the last known good version. Do not wait for a fix-forward while users are
   affected.
-- Verify recovery: the error rate returns to baseline within ~5 minutes of the rollback.
+- Verify recovery: within ~5 minutes of the rollback, each status code the incident raised
+  (for example 503 at the origin, 502/504 at its callers) falls back to baseline.
 
 ## 4. Follow up
 - Open a ticket for the owning team with the evidence: deploy, first error, error messages,

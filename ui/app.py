@@ -48,7 +48,7 @@ TOOL_ICON = {
     "get_failure_modes": "🧭",
 }
 SCENARIO_LABELS = {
-    "5xx_after_deploy": "5xx spike after a deploy",
+    "5xx_after_deploy": "502/503/504 spike after a deploy",
     "oom_memory_leak": "Memory leak → OOM kills",
 }
 IMPACTED_LINE_COLORS = ["#E5484D", "#F08C3A", "#A855F7", "#0EA5E9", "#EC4899"]

@@ -19,7 +19,7 @@ from app.tools import TOOLS
 NOW = datetime(2026, 10, 17, 12, 0, tzinfo=UTC)
 
 REPORT = {
-    "title": "5xx spike on api-gateway caused by payments v2.4.0",
+    "title": "api-gateway 502/504 spike caused by payments v2.4.0",
     "severity": "SEV2",
     "summary": "payments v2.4.0 shrank its DB pool from 50 to 5.",
     "impact": "~18% of gateway requests fail with 502 since 11:52 UTC.",

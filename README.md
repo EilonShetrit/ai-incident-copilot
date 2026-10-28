@@ -20,12 +20,12 @@ When an alert fires, the first 10–15 minutes of on-call go to the same routine
 Each scenario is a YAML file in [`scenarios/`](scenarios/): the services, what breaks and when,
 the alert that fires, and the conclusion a good on-call engineer should reach.
 
-### 1. 5xx spike after a deploy (DB connection pool exhaustion)
+### 1. 502/503/504 spike after a deploy (DB connection pool exhaustion)
 
 A small shop: `api-gateway → checkout → payments → postgres`, plus `inventory`.
 At T+0, `payments v2.4.0` ships with its DB connection pool cut from 50 to 5. Two minutes later
 requests start timing out waiting for a connection: `payments` returns 503, `checkout` returns 502,
-and the monitor fires on **`api-gateway`** at T+5 with ~18% 5xx. `inventory` stays healthy.
+and the monitor fires on **`api-gateway`** at T+5 with ~18% of requests failing. `inventory` stays healthy.
 
 The status codes tell the story the way they would in production: `payments` returns
 **503** (pool exhausted), `checkout` returns **502** and **504** (its 4s timeout), and the gateway,
@@ -207,6 +207,7 @@ values come from the scenario file. For the first scenario:
 | `healthy_ruled_out` | `inventory` is listed as ruled out, not impacted |
 | `mitigation_first` | The first next step is rolling back `payments` |
 | `evidence_backed` | The evidence cites at least three different tools |
+| `specific_codes` | The report never says a generic "5xx"; it names the actual codes (e.g. 502 Bad Gateway) |
 
 For the memory leak, the same checks expect `inventory` as the root cause (named by `v1.5.0` and
 memory), `memory_leak_oom` as the failure mode, 502/503 at checkout, `payments` ruled out, and a

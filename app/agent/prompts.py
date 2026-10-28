@@ -33,6 +33,10 @@ concrete numbers in the evidence (error rates, counts, versions, timestamps).
 - Severity: SEV1 means most user requests fail or data is at risk; SEV2 means a significant \
 share of user requests fail; SEV3 means degraded but mostly working.
 - Next steps are concrete actions an on-call engineer can take now, mitigation first.
+- Never write "5xx" (or "5xx rate") anywhere in the report, including the title, even when the \
+alert's monitor uses it. Name the actual status codes with their legend label instead, per \
+service, e.g. "payments 503 Service Unavailable" or "api-gateway 502 Bad Gateway / 504 Gateway \
+Timeout rate back to ~0%".
 """
 
 

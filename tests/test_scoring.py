@@ -67,6 +67,18 @@ def test_inventory_marked_impacted_fails_two_checks():
     assert failed(checks) == ["impacted_services", "healthy_ruled_out"]
 
 
+def test_generic_5xx_fails():
+    steps = [
+        GOOD["next_steps"][0],
+        "Check recovery: api-gateway's 5xx rate falls back to ~0%",
+    ]
+    checks = score(report(next_steps=steps), TRUTH)
+    assert failed(checks) == ["specific_codes"]
+    steps[1] = "Check recovery: api-gateway 502 Bad Gateway / 504 Gateway Timeout fall back to ~0%"
+    assert failed(score(report(next_steps=steps), TRUTH)) == []
+    assert failed(score(report(title="5XX spike at api-gateway"), TRUTH)) == ["specific_codes"]
+
+
 def test_mitigation_must_come_first():
     steps = ["Page the payments team", "Roll back payments"]
     assert failed(score(report(next_steps=steps), TRUTH)) == ["mitigation_first"]
@@ -124,7 +136,7 @@ def test_run_once_seeds_and_scores(monkeypatch):
     monkeypatch.setattr(eval_run, "investigate", fake_investigate)
     scenario = load_scenario("scenarios/5xx_after_deploy.yaml")
     result = eval_run.run_once(scenario)
-    assert result["passed"] == result["total"] == 8
+    assert result["passed"] == result["total"] == 9
     assert seen["alert"].service == "api-gateway"
 
 
