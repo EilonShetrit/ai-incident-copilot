@@ -14,6 +14,8 @@ from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from app.agent import IncidentReport, investigate
 from app.clients.opensearch import get_client
 from app.config import settings
@@ -83,6 +85,11 @@ def to_markdown(summary: dict) -> str:
 
 def regrade(path: Path, scenario: dict) -> None:
     summary = json.loads(path.read_text())
+    try:
+        for run in summary["runs"]:
+            IncidentReport.model_validate(run["report"])
+    except ValidationError:
+        sys.exit(f"{path} was saved with an older report schema; run a fresh eval instead.")
     for run in summary["runs"]:
         checks = score(IncidentReport.model_validate(run["report"]), scenario["ground_truth"])
         run["checks"] = [asdict(c) for c in checks]

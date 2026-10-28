@@ -36,6 +36,13 @@ def score(report: IncidentReport, truth: dict[str, Any]) -> list[Check]:
     first_step = _norm(report.next_steps[0]) if report.next_steps else ""
     missing_step = [k for k in truth["first_step_keywords"] if k.lower() not in first_step]
     tools_cited = {e.tool for e in report.evidence}
+    reported_codes = {(e.service, e.code) for e in report.error_codes}
+    missing_codes = [
+        f"{service} {code}"
+        for service, codes in truth["key_error_codes"].items()
+        for code in codes
+        if (service, code) not in reported_codes
+    ]
 
     return [
         Check(
@@ -49,6 +56,16 @@ def score(report: IncidentReport, truth: dict[str, Any]) -> list[Check]:
             "mentions " + ", ".join(truth["root_cause_keywords"])
             if not missing_keywords
             else f"missing {missing_keywords} in hypothesis/trigger",
+        ),
+        Check(
+            "failure_mode",
+            report.failure_mode.id == truth["failure_mode"],
+            f"said {report.failure_mode.id!r}, expected {truth['failure_mode']!r}",
+        ),
+        Check(
+            "error_codes",
+            not missing_codes,
+            "breakdown has the key codes" if not missing_codes else f"missing {missing_codes}",
         ),
         Check(
             "impacted_services",

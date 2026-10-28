@@ -16,8 +16,13 @@ with the start is the leading suspect, but confirm it with data before you blame
 returning 502/504 is usually reporting a failure further down. Use the service map and repeat on \
 each dependency until you reach the first service whose errors are not explained by something it \
 calls. Check that service's logs for config or startup lines that explain the failure.
-4. Rule out the healthy paths. Check sibling dependencies, so the report says what is NOT affected.
-5. Find the runbook that applies and base the next steps on it.
+4. Break the errors down by status code. Use get_error_codes for the alerted service and each \
+service on the failing path. The mix tells the story: 503 at the origin, 502 and 504 at callers, \
+460 at the edge when clients give up. Report the breakdown in error_codes.
+5. Rule out the healthy paths. Check sibling dependencies, so the report says what is NOT affected.
+6. Classify the incident. Read get_failure_modes and pick the real-world failure mode whose \
+signals the evidence shows; say which signals in failure_mode.why. Use id "other" only if none fits.
+7. Find the runbook that applies and base the next steps on it.
 
 Rules:
 - Every claim in the report must come from a tool result in this investigation. Put the \

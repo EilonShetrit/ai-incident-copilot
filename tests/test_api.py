@@ -26,6 +26,19 @@ REPORT = IncidentReport.model_validate(
             "trigger": "deploy v2.4.0",
             "confidence": "high",
         },
+        "failure_mode": {
+            "id": "db_connection_pool_exhaustion",
+            "name": "Database connection pool exhaustion",
+            "why": "pool 5/5 in use, 503 'could not acquire connection'",
+        },
+        "error_codes": [
+            {"service": "payments", "code": 503, "count": 77},
+            {"service": "checkout", "code": 502, "count": 28},
+            {"service": "checkout", "code": 504, "count": 9},
+            {"service": "api-gateway", "code": 502, "count": 36},
+            {"service": "api-gateway", "code": 504, "count": 7},
+            {"service": "api-gateway", "code": 460, "count": 2},
+        ],
         "evidence": [],
         "timeline": [],
         "next_steps": ["Roll back payments to v2.3.0"],
@@ -134,3 +147,9 @@ def test_service_metrics_when_opensearch_is_down(client, monkeypatch):
 
     monkeypatch.setattr(main, "get_metrics", down)
     assert client.get("/services/payments/metrics").status_code == 503
+
+
+def test_status_code_catalog(client):
+    codes = client.get("/catalog/status-codes").json()
+    assert list(codes) == ["460", "500", "501", "502", "503", "504"]
+    assert codes["502"]["emoji"] == "🌐"

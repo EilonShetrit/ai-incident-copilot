@@ -1,7 +1,7 @@
 {
   "id": "7381920045",
-  "title": "[Triggered] api-gateway 5xx rate is above 5%",
-  "body": "5xx error rate on api-gateway is 18.4% over the last 5 minutes (threshold 5%).",
+  "title": "[Triggered] api-gateway 5xx error rate is above 5%",
+  "body": "5xx error rate on api-gateway is 18.4% over the last 5 minutes (threshold 5%).\n\nError Codes Monitored:\n* 460 - 🛑 Client Closed Connection Before Timeout\n* 500 - 🔧 Internal Server Error\n* 501 - 🚫 Not Implemented\n* 502 - 🌐 Bad Gateway\n* 503 - ⏳ Service Unavailable\n* 504 - ⏰ Gateway Timeout",
   "alert_transition": "Triggered",
   "priority": "P2",
   "alert_query": "sum(last_5m):sum:http.requests{service:api-gateway,status_class:5xx}.as_count() / sum:http.requests{service:api-gateway}.as_count() > 0.05",

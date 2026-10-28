@@ -1,0 +1,55 @@
+# HTTP status codes the error-rate monitors watch, as they appear in the monitor message.
+# `causes` are what usually produces the code in a real microservice stack.
+status_codes:
+  460:
+    emoji: "🛑"
+    label: Client Closed Connection Before Timeout
+    meaning: >-
+      The load balancer (AWS ALB) logged that the client hung up before the backend answered.
+      The backend may still be working on the request.
+    causes:
+      - Client timeout shorter than backend latency (mobile apps, SDKs, upstream callers)
+      - Users abandoning slow pages
+      - Aggressive client retries during a slowdown
+  500:
+    emoji: "🔧"
+    label: Internal Server Error
+    meaning: The service hit an error it did not handle.
+    causes:
+      - Unhandled exception or bug in newly deployed code
+      - Bad or missing configuration, secret or feature flag
+      - Unexpected data from a dependency
+  501:
+    emoji: "🚫"
+    label: Not Implemented
+    meaning: The server does not support the method or feature the request needs.
+    causes:
+      - Request routed to an old version during a partial rollout
+      - Client calling an API version or method the service does not support
+      - Feature disabled behind a flag
+  502:
+    emoji: "🌐"
+    label: Bad Gateway
+    meaning: >-
+      A proxy, gateway or calling service got an invalid response, or an error, from the
+      service behind it. The failure is usually downstream.
+    causes:
+      - Upstream service returning errors or crashing and restarting
+      - Upstream pods killed (OOM, failed health checks) mid-request
+      - Connection resets, keep-alive timeout mismatch between proxy and upstream
+  503:
+    emoji: "⏳"
+    label: Service Unavailable
+    meaning: The service is up but cannot take the request right now.
+    causes:
+      - A resource pool exhausted (DB connections, threads, workers)
+      - No healthy targets behind the load balancer
+      - Overload, rate limiting, circuit breaker open, maintenance mode
+  504:
+    emoji: "⏰"
+    label: Gateway Timeout
+    meaning: A proxy or calling service gave up waiting for the service behind it.
+    causes:
+      - Slow upstream (slow queries, lock contention, saturated dependency)
+      - Upstream timeout longer than the caller's timeout
+      - Network or DNS problems between services

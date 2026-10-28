@@ -42,6 +42,16 @@ class GetRunbookInput(_Input):
     name: str | None = Field(None, description="Runbook name. Omit to list available runbooks")
 
 
+class GetErrorCodesInput(_Input):
+    start: str = Field(description=TIME_HELP)
+    end: str = Field(description=TIME_HELP)
+    service: str | None = Field(None, description="Only this service")
+
+
+class GetFailureModesInput(_Input):
+    pass
+
+
 TOOL_SPECS: dict[str, tuple[type[_Input], str]] = {
     "search_logs": (
         SearchLogsInput,
@@ -69,6 +79,18 @@ TOOL_SPECS: dict[str, tuple[type[_Input], str]] = {
     "get_runbook": (
         GetRunbookInput,
         "Read an operational runbook by name, or list the available runbooks.",
+    ),
+    "get_error_codes": (
+        GetErrorCodesInput,
+        "Failed requests per service broken down by HTTP status code, with each code's share "
+        "of requests. Monitored codes (460, 500, 501, 502, 503, 504) come with their meaning "
+        "and common real-world causes. Use it to see which services fail and how.",
+    ),
+    "get_failure_modes": (
+        GetFailureModesInput,
+        "The catalog of real-world failure modes (pool exhaustion, bad deploy, timeout "
+        "cascade, OOM, DNS, expired certificate, ...) with the signals that identify each one. "
+        "Use it to classify the incident.",
     ),
 }
 

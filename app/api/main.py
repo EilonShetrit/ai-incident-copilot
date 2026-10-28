@@ -4,6 +4,7 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Resp
 from fastapi.responses import PlainTextResponse
 
 from app.agent import InvestigationError, investigate
+from app.catalog import status_codes
 from app.config import settings
 from app.incidents import Incident, IncidentStatus, store
 from app.models import DatadogAlert
@@ -125,3 +126,12 @@ def service_metrics(service: str, minutes: int = Query(30, ge=1, le=240)) -> dic
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, f"Metrics unavailable: {type(exc).__name__}"
         ) from exc
+
+
+@app.get("/catalog/status-codes")
+def monitored_status_codes() -> dict:
+    """The HTTP status codes the monitors watch, with emoji and label."""
+    return {
+        str(code): {"emoji": info["emoji"], "label": info["label"], "meaning": info["meaning"]}
+        for code, info in status_codes().items()
+    }

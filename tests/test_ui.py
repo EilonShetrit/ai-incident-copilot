@@ -18,6 +18,19 @@ REPORT = {
         "trigger": "deploy v2.4.0",
         "confidence": "high",
     },
+    "failure_mode": {
+        "id": "db_connection_pool_exhaustion",
+        "name": "Database connection pool exhaustion",
+        "why": "pool 5/5 in use, 503 'could not acquire connection'",
+    },
+    "error_codes": [
+        {"service": "payments", "code": 503, "count": 77},
+        {"service": "checkout", "code": 502, "count": 28},
+        {"service": "checkout", "code": 504, "count": 9},
+        {"service": "api-gateway", "code": 502, "count": 36},
+        {"service": "api-gateway", "code": 504, "count": 7},
+        {"service": "api-gateway", "code": 460, "count": 2},
+    ],
     "evidence": [{"tool": "get_deploy_events", "finding": "payments v2.4.0"}],
     "timeline": [{"time": "2026-10-18T12:00:00Z", "event": "deploy"}],
     "next_steps": ["Roll back payments to v2.3.0"],
@@ -72,6 +85,14 @@ def fake_api(monkeypatch):
     monkeypatch.setattr(api_client, "get_report_markdown", lambda _id: "# report")
     monkeypatch.setattr(
         api_client,
+        "status_codes",
+        lambda: {
+            "502": {"emoji": "🌐", "label": "Bad Gateway"},
+            "501": {"emoji": "🚫", "label": "Not Implemented"},
+        },
+    )
+    monkeypatch.setattr(
+        api_client,
         "service_metrics",
         lambda service, minutes=30: {
             "series": [{"@timestamp": "2026-10-18T12:00:00Z", "error_rate": 0.2}]
@@ -115,6 +136,9 @@ def test_resolved_shows_report(fake_api):
     assert 'kpi-value">High<' in text
     assert "pool max_size 5" in text
     assert "<b>Do now:</b> Roll back payments to v2.3.0" in text
+    assert "Database connection pool exhaustion" in text
+    assert "502 - 🌐 Bad Gateway" in text
+    assert '<tr class="dim"><td class="code">501 - 🚫 Not Implemented' in text
 
 
 def test_failed_shows_error(fake_api):

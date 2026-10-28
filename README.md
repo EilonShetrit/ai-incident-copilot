@@ -22,6 +22,10 @@ At T+0, `payments v2.4.0` ships with its DB connection pool cut from 50 to 5. Tw
 requests start timing out waiting for a connection: `payments` returns 503, `checkout` returns 502,
 and the monitor fires on **`api-gateway`** at T+5 with ~18% 5xx. `inventory` stays healthy.
 
+The status codes tell the story the way they would in production: `payments` returns
+**503** (pool exhausted), `checkout` returns **502** and **504** (its 4s timeout), and the gateway,
+behind an AWS ALB, shows **502**, **504** and a few **460**s from mobile clients giving up.
+
 The alert points at the gateway; the root cause is two hops downstream. The full timeline and the
 expected conclusion live in [`scenarios/5xx_after_deploy.yaml`](scenarios/5xx_after_deploy.yaml).
 
@@ -90,6 +94,8 @@ uv run python -m app.tools get_runbook --name high_5xx_rate
 | `get_metrics` | How bad is it, and since when? |
 | `get_service_map` | Who calls whom, and who owns it? |
 | `get_runbook` | What does our process say to do next? |
+| `get_error_codes` | Which status codes, where? (460, 500–504 with meaning and common causes) |
+| `get_failure_modes` | Which real-world failure is this? (pool exhaustion, bad deploy, timeout cascade, OOM, ...) |
 
 ## The agent
 
@@ -168,13 +174,12 @@ against the scenario's `ground_truth`:
 |---|---|
 | `root_cause_service` | The root cause is `payments`, not the alerted `api-gateway` |
 | `root_cause_explained` | The hypothesis names the deploy (`v2.4.0`) and the mechanism (DB pool) |
+| `failure_mode` | Classified as `db_connection_pool_exhaustion` from the failure-mode catalog |
+| `error_codes` | The breakdown has 503 at payments, 502/504 at checkout and api-gateway |
 | `impacted_services` | Exactly `api-gateway`, `checkout`, `payments` |
 | `healthy_ruled_out` | `inventory` is listed as ruled out, not impacted |
 | `mitigation_first` | The first next step is rolling back `payments` |
 | `evidence_backed` | The evidence cites at least three different tools |
-
-**Latest result: 18/18 checks passed over 3 runs** ([`latest.md`](evals/results/latest.md)), about
-45 seconds and 15 tool calls per investigation.
 
 Results land in [`evals/results/`](evals/results/): one JSON per eval with every report, and
 `latest.md` with a pass/fail table. The [Eval workflow](.github/workflows/eval.yml) runs the same

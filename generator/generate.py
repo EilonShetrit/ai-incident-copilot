@@ -60,7 +60,7 @@ def _state_at(scenario: dict[str, Any], service: str, minute: int) -> dict[str, 
         for key, target in fault["effect"].items():
             base = state.get(key, target)
             state[key] = base + (target - base) * progress
-        if "status_code" in fault:
+        if "errors" in fault or "status_code" in fault:
             active_fault = fault
     return {"values": state, "fault": active_fault}
 
@@ -71,6 +71,14 @@ def _version_at(scenario: dict[str, Any], service: str, minute: float) -> str:
         if deploy["service"] == service and minute >= deploy["at"]:
             version = deploy["to_version"]
     return version
+
+
+def _pick_error(rng: random.Random, fault: dict[str, Any]) -> tuple[int, str, str]:
+    """(status, level, message) for one failed request, from the fault's error mix."""
+    if "errors" not in fault:
+        return fault["status_code"], "ERROR", fault["error_message"]
+    choice = rng.choices(fault["errors"], weights=[e["weight"] for e in fault["errors"]])[0]
+    return choice["status_code"], choice.get("level", "ERROR"), choice["message"]
 
 
 def _latency(rng: random.Random, p95: float) -> int:
@@ -113,7 +121,7 @@ def generate(scenario: dict[str, Any], anchor: datetime | None = None) -> Datase
                 ts = minute_start + timedelta(seconds=offset)
                 is_error = rng.random() < values["error_rate"]
                 if is_error and fault:
-                    status, level, message = fault["status_code"], "ERROR", fault["error_message"]
+                    status, level, message = _pick_error(rng, fault)
                 elif is_error:
                     status, level, message = 500, "ERROR", "Internal Server Error"
                 else:

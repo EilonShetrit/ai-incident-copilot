@@ -18,6 +18,19 @@ GOOD = {
         "trigger": "deploy payments v2.3.0 -> v2.4.0",
         "confidence": "high",
     },
+    "failure_mode": {
+        "id": "db_connection_pool_exhaustion",
+        "name": "Database connection pool exhaustion",
+        "why": "pool 5/5 in use, 503 'could not acquire connection'",
+    },
+    "error_codes": [
+        {"service": "payments", "code": 503, "count": 77},
+        {"service": "checkout", "code": 502, "count": 28},
+        {"service": "checkout", "code": 504, "count": 9},
+        {"service": "api-gateway", "code": 502, "count": 36},
+        {"service": "api-gateway", "code": 504, "count": 7},
+        {"service": "api-gateway", "code": 460, "count": 2},
+    ],
     "evidence": [
         {"tool": "get_deploy_events", "finding": "..."},
         {"tool": "search_logs", "finding": "..."},
@@ -111,5 +124,14 @@ def test_run_once_seeds_and_scores(monkeypatch):
     monkeypatch.setattr(eval_run, "investigate", fake_investigate)
     scenario = load_scenario("scenarios/5xx_after_deploy.yaml")
     result = eval_run.run_once(scenario, {"id": "1", "title": "t", "tags": "service:api-gateway"})
-    assert result["passed"] == result["total"] == 6
+    assert result["passed"] == result["total"] == 8
     assert seen["alert"].service == "api-gateway"
+
+
+def test_wrong_failure_mode_and_missing_codes_fail():
+    fm = {**GOOD["failure_mode"], "id": "memory_leak_oom"}
+    codes = [c for c in GOOD["error_codes"] if c["code"] != 504]
+    assert failed(score(report(failure_mode=fm, error_codes=codes), TRUTH)) == [
+        "failure_mode",
+        "error_codes",
+    ]

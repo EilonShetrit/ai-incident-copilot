@@ -41,3 +41,7 @@ def get_report_markdown(incident_id: str) -> str:
 def service_metrics(service: str, minutes: int = 30) -> dict[str, Any] | None:
     response = _client.get(f"/services/{service}/metrics", params={"minutes": minutes})
     return response.json() if response.status_code == 200 else None
+
+
+def status_codes() -> dict[str, Any]:
+    return _client.get("/catalog/status-codes").raise_for_status().json()

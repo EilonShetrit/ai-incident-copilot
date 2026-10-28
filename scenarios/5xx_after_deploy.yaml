@@ -55,20 +55,38 @@ faults:
     starts_at: 2
     ramp: 1
     effect: {error_rate: 0.22, latency_p95_ms: 4200}
-    status_code: 503
-    error_message: "TimeoutError: could not acquire connection from pool (max_size=5, timeout=3000ms)"
+    errors:
+      - status_code: 503
+        weight: 1
+        message: "TimeoutError: could not acquire connection from pool (max_size=5, timeout=3000ms)"
+  # checkout calls payments with a 4s timeout: most calls get the 503 back, slow ones time out.
   - service: checkout
     starts_at: 3
     ramp: 1
     effect: {error_rate: 0.19, latency_p95_ms: 4400}
-    status_code: 502
-    error_message: "upstream payments returned 503 Service Unavailable"
+    errors:
+      - status_code: 502
+        weight: 0.75
+        message: "upstream payments returned 503 Service Unavailable"
+      - status_code: 504
+        weight: 0.25
+        message: "upstream payments timed out after 4000ms"
+  # api-gateway sits behind an ALB; some mobile clients (5s timeout) give up first: ALB 460.
   - service: api-gateway
     starts_at: 3
     ramp: 1
     effect: {error_rate: 0.18, latency_p95_ms: 4600}
-    status_code: 502
-    error_message: "upstream checkout returned 502 Bad Gateway"
+    errors:
+      - status_code: 502
+        weight: 0.65
+        message: "upstream checkout returned 502 Bad Gateway"
+      - status_code: 504
+        weight: 0.20
+        message: "upstream checkout timed out after 5000ms"
+      - status_code: 460
+        weight: 0.15
+        level: WARN
+        message: "client closed connection before response (ALB 460, target processing 4.8s)"
 
 # What a correct investigation concludes. Used by tests and the eval in later stages.
 ground_truth:
@@ -79,6 +97,12 @@ ground_truth:
   impacted_services: [api-gateway, checkout, payments]
   healthy_services: [inventory]
   expected_next_step: "Roll back payments to v2.3.0"
+  failure_mode: db_connection_pool_exhaustion
+  # Status codes the report must break down, per service.
+  key_error_codes:
+    payments: [503]
+    checkout: [502, 504]
+    api-gateway: [502, 504]
   # Used by the eval (evals/scoring.py) to grade free-text fields.
   root_cause_keywords: [v2.4.0, pool]
   first_step_keywords: [rollback, payments]

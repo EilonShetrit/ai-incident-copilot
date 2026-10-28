@@ -1,0 +1,99 @@
+# Real-world failure modes the agent maps an incident to. Each one lists the signals that
+# identify it in logs and metrics, what usually triggers it, and the standard first response.
+failure_modes:
+  db_connection_pool_exhaustion:
+    name: Database connection pool exhaustion
+    category: resource saturation
+    signals:
+      - "Errors like 'could not acquire connection from pool' or 'pool timeout'"
+      - db_pool_active pinned at db_pool_max
+      - 503s from the service; latency jumps to roughly the pool acquire timeout
+      - Callers report 502/504 for that dependency
+    triggers:
+      - Config change that shrank the pool (deploy, env var, Helm values)
+      - Traffic spike beyond pool capacity
+      - Slow queries or connection leaks holding connections
+    first_response: Roll back the change or raise the pool size; then find what holds connections.
+  bad_deploy_regression:
+    name: Bad deploy (code regression)
+    category: change
+    signals:
+      - Errors start within minutes of a deploy and only on the new version
+      - 500s with a new exception type or stack trace
+    triggers: [Bug in new code, untested edge case, incompatible dependency upgrade]
+    first_response: Roll back to the previous version; investigate after.
+  config_or_secret_error:
+    name: Bad configuration, secret or feature flag
+    category: change
+    signals:
+      - Errors right after a config change, flag flip or secret rotation, without a code deploy
+      - Startup logs show unexpected values; auth or connection errors
+    triggers: [Wrong env var, expired or rotated secret, flag enabled for everyone]
+    first_response: Revert the config or flag change.
+  upstream_timeout_cascade:
+    name: Timeout cascade from a slow dependency
+    category: dependency
+    signals:
+      - 504s at callers, rising p95/p99 latency down the call chain
+      - Retries multiply load on the slow service
+      - 460s at the edge as clients give up
+    triggers: [Slow database or third-party API, lock contention, timeouts set longer than callers']
+    first_response: Shed load or fail fast (lower timeouts, open circuit breakers); fix the slow dependency.
+  memory_leak_oom:
+    name: Memory leak or OOM kills
+    category: resource saturation
+    signals:
+      - Memory climbing steadily, then pod or container restarts (OOMKilled)
+      - Bursts of 502 at callers when instances die mid-request
+    triggers: [Leak in new code, cache without limits, traffic with large payloads]
+    first_response: Restart or scale out to buy time; roll back if a deploy introduced it.
+  cpu_saturation:
+    name: CPU saturation or throttling
+    category: resource saturation
+    signals:
+      - CPU at limit or throttled, latency rising with load, health checks timing out
+    triggers: [Traffic spike, expensive new code path, CPU limits set too low]
+    first_response: Scale out; roll back a hot code path if a deploy introduced it.
+  thread_pool_exhaustion:
+    name: Worker or thread pool exhaustion
+    category: resource saturation
+    signals:
+      - Requests queue, 503s or 504s, all workers busy while CPU is not saturated
+    triggers: [Blocking calls to a slow dependency, too few workers configured]
+    first_response: Add capacity or cut the slow dependency out of the request path.
+  dependency_outage:
+    name: Downstream dependency outage
+    category: dependency
+    signals:
+      - Connection refused or reset to one dependency, errors on every path that uses it
+      - Siblings that do not use it stay healthy
+    triggers: [Database failover, third-party outage, network partition]
+    first_response: Fail over or degrade gracefully; page the owner of the dependency.
+  dns_or_network_failure:
+    name: DNS or network failure
+    category: infrastructure
+    signals:
+      - Name resolution errors, connect timeouts across many services at once
+    triggers: [DNS provider issue, security group or network policy change]
+    first_response: Revert the network change; check DNS health.
+  tls_certificate_expiry:
+    name: Expired TLS certificate
+    category: infrastructure
+    signals:
+      - Handshake or certificate errors starting at a precise time, every client affected
+    triggers: [Certificate not renewed, renewal automation broken]
+    first_response: Renew and deploy the certificate.
+  rate_limiting:
+    name: Rate limiting or quota exhaustion
+    category: dependency
+    signals:
+      - 429s or 503s from a provider, errors proportional to traffic
+    triggers: [Traffic spike, retry storm, quota lowered]
+    first_response: Back off and reduce retries; request a higher quota.
+  disk_full:
+    name: Disk or volume full
+    category: infrastructure
+    signals:
+      - Write errors ('no space left on device'), database refusing writes
+    triggers: [Log growth, missing retention, large temp files]
+    first_response: Free space or expand the volume; fix retention.

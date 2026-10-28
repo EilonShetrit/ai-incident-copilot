@@ -44,6 +44,8 @@ TOOL_ICON = {
     "get_metrics": "📈",
     "get_service_map": "🗺️",
     "get_runbook": "📘",
+    "get_error_codes": "🚦",
+    "get_failure_modes": "🧭",
 }
 IMPACTED_LINE_COLORS = ["#E5484D", "#F08C3A", "#A855F7", "#0EA5E9", "#EC4899"]
 HEALTHY_LINE_COLOR = "#B8BEC9"
@@ -68,6 +70,14 @@ st.html(
                letter-spacing: 0.04em; white-space: nowrap; }
   .kpi-value { font-size: 1.1rem; font-weight: 700; margin-top: 2px; line-height: 1.5;
                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  table.codes { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  table.codes th { color: #6B7280; font-weight: 600; font-size: 0.75rem; text-align: right;
+                   padding: 4px 6px; border: none; white-space: nowrap; }
+  table.codes td { padding: 5px 6px; border: none; border-top: 1px solid #EEF0F6; }
+  table.codes td.code { white-space: nowrap; }
+  table.codes td.n { text-align: right; font-weight: 600; color: #E5484D; }
+  table.codes td.zero { text-align: right; color: #C4C8D2; }
+  table.codes tr.dim td.code { color: #9CA3AF; }
   [data-testid="stExpander"] details summary p { font-size: 0.9rem; }
 </style>
 """
@@ -242,6 +252,38 @@ def render_error_rates(impacted: list[str], healthy: list[str], deploys) -> None
         st.altair_chart(chart.properties(height=260), use_container_width=True)
 
 
+def render_failure_mode_and_codes(report: dict) -> None:
+    fm = report["failure_mode"]
+    with st.container(border=True):
+        st.markdown(
+            "**🧭 Failure mode** &nbsp;" + pill(fm["name"], COLORS["accent"], COLORS["info_bg"]),
+            unsafe_allow_html=True,
+        )
+        st.caption(fm["why"])
+
+    with st.container(border=True):
+        st.markdown("**🚦 Error codes monitored**")
+        legend = api_client.status_codes()
+        services = list(dict.fromkeys(e["service"] for e in report["error_codes"]))
+        counts = {(e["service"], e["code"]): e["count"] for e in report["error_codes"]}
+        head = "".join(f"<th>{html.escape(s)}</th>" for s in services)
+        rows = []
+        for code, info in legend.items():
+            cells = []
+            for service in services:
+                n = counts.get((service, int(code)), 0)
+                cells.append(f'<td class="{"n" if n else "zero"}">{n or "·"}</td>')
+            seen = any(counts.get((s, int(code))) for s in services)
+            rows.append(
+                f'<tr class="{"" if seen else "dim"}"><td class="code">{code} - '
+                f"{info['emoji']} {html.escape(info['label'])}</td>{''.join(cells)}</tr>"
+            )
+        st.markdown(
+            f'<table class="codes"><tr><th></th>{head}</tr>{"".join(rows)}</table>',
+            unsafe_allow_html=True,
+        )
+
+
 def kpi(col, label: str, value: str) -> None:
     with col.container(border=True):
         st.markdown(
@@ -282,6 +324,8 @@ def render_report(incident: dict) -> None:
             unsafe_allow_html=True,
         )
         st.caption(report["impact"])
+
+    render_failure_mode_and_codes(report)
 
     with st.container(border=True):
         st.markdown("**✅ Next steps**")

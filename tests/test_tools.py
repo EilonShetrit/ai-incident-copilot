@@ -11,6 +11,8 @@ import pytest
 from app.clients.opensearch import get_client
 from app.tools import (
     get_deploy_events,
+    get_error_codes,
+    get_failure_modes,
     get_metrics,
     get_runbook,
     get_service_map,
@@ -48,7 +50,8 @@ def test_no_deploys_in_baseline_window():
 def test_gateway_errors_point_downstream():
     result = search_logs(*AFTER, service="api-gateway", level="ERROR")
     assert result["total"] > 20
-    assert result["by_status_code"].keys() == {"502"}
+    assert result["by_status_code"].keys() <= {"500", "502", "504"}
+    assert max(result["by_status_code"], key=result["by_status_code"].get) == "502"
     assert "upstream checkout" in result["top_messages"][0]["message"]
 
 
@@ -92,3 +95,25 @@ def test_runbooks():
     assert set(get_runbook()["available"]) == {"deploy_regression", "high_5xx_rate"}
     assert "Roll back" in get_runbook("deploy_regression")["content"]
     assert "error" in get_runbook("nope")
+
+
+def test_error_codes_tell_the_story():
+    services = get_error_codes(*AFTER)["services"]
+    codes = {s: {c["code"] for c in info["codes"]} for s, info in services.items()}
+    assert 503 in codes["payments"]
+    assert {502, 504} <= codes["checkout"]
+    assert {502, 504} <= codes["api-gateway"]
+    top = services["api-gateway"]["codes"][0]
+    assert (top["code"], top["label"]) == (502, "🌐 Bad Gateway")
+
+
+def test_error_codes_reference_explains_monitored_codes():
+    result = get_error_codes(*AFTER, service="payments")
+    assert list(result["services"]) == ["payments"]
+    assert "pool" in " ".join(result["code_reference"][503]["common_causes"])
+
+
+def test_failure_modes_catalog():
+    modes = get_failure_modes()["failure_modes"]
+    assert "db_connection_pool_exhaustion" in modes
+    assert all({"name", "signals", "first_response"} <= m.keys() for m in modes.values())
