@@ -3,7 +3,16 @@ from typing import Any
 from app.clients.opensearch import METRICS_INDEX, get_client
 from app.tools._time import time_range
 
-METRICS = ["error_rate", "latency_p95_ms", "requests", "db_pool_max", "db_pool_active"]
+METRICS = [
+    "error_rate",
+    "latency_p95_ms",
+    "requests",
+    "db_pool_max",
+    "db_pool_active",
+    "memory_mb",
+    "memory_limit_mb",
+    "restarts",
+]
 
 
 def get_metrics(start: str, end: str, service: str) -> dict[str, Any]:

@@ -123,7 +123,7 @@ def test_run_once_seeds_and_scores(monkeypatch):
 
     monkeypatch.setattr(eval_run, "investigate", fake_investigate)
     scenario = load_scenario("scenarios/5xx_after_deploy.yaml")
-    result = eval_run.run_once(scenario, {"id": "1", "title": "t", "tags": "service:api-gateway"})
+    result = eval_run.run_once(scenario)
     assert result["passed"] == result["total"] == 8
     assert seen["alert"].service == "api-gateway"
 
@@ -135,3 +135,10 @@ def test_wrong_failure_mode_and_missing_codes_fail():
         "failure_mode",
         "error_codes",
     ]
+
+
+def test_alternative_first_steps():
+    truth = load_scenario("scenarios/oom_memory_leak.yaml")["ground_truth"]
+    for step in ["Roll back inventory to v1.4.2", "Raise inventory's memory limit to 1Gi now"]:
+        assert "mitigation_first" not in failed(score(report(next_steps=[step]), truth)), step
+    assert "mitigation_first" in failed(score(report(next_steps=["Page the team"]), truth))

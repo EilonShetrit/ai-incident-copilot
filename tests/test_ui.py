@@ -80,6 +80,11 @@ def fake_api(monkeypatch):
         ]
 
     monkeypatch.setattr(api_client, "is_up", lambda: True)
+    monkeypatch.setattr(
+        api_client,
+        "list_scenarios",
+        lambda: [{"name": "5xx_after_deploy", "description": "d", "alert": "api-gateway 5xx"}],
+    )
     monkeypatch.setattr(api_client, "list_incidents", listing)
     monkeypatch.setattr(api_client, "get_incident", lambda _id: state["incident"])
     monkeypatch.setattr(api_client, "get_report_markdown", lambda _id: "# report")
@@ -114,7 +119,7 @@ def test_api_down_shows_how_to_start_it(monkeypatch):
 def test_empty_state(fake_api):
     at = run()
     assert at.header[0].value == "No incidents yet"
-    assert "Fire sample alert" in at.info[0].value
+    assert "Fire alert" in at.info[0].value
 
 
 def test_investigating_shows_live_trace(fake_api):

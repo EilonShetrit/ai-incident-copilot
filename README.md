@@ -7,7 +7,7 @@
 
 > **All data in this project is synthetic.** No real systems, customers or logs are used.
 
-**Status:** MVP complete. One end-to-end scenario, *"5xx spike after a deploy"*, from webhook to report, with a ground-truth eval.
+**Status:** MVP complete. Two end-to-end incident scenarios, from webhook to report, each graded by a ground-truth eval.
 
 <!-- Screenshot: add docs/screenshot.png from a real run and reference it here. -->
 
@@ -15,7 +15,12 @@
 
 When an alert fires, the first 10–15 minutes of on-call go to the same routine: open the dashboard, pull logs for the window, check what was deployed, look at downstream services, find the runbook. This project hands that routine to an agent, so the engineer starts from a written hypothesis instead of a blank screen.
 
-## The scenario
+## The scenarios
+
+Each scenario is a YAML file in [`scenarios/`](scenarios/): the services, what breaks and when,
+the alert that fires, and the conclusion a good on-call engineer should reach.
+
+### 1. 5xx spike after a deploy (DB connection pool exhaustion)
 
 A small shop: `api-gateway → checkout → payments → postgres`, plus `inventory`.
 At T+0, `payments v2.4.0` ships with its DB connection pool cut from 50 to 5. Two minutes later
@@ -28,6 +33,23 @@ behind an AWS ALB, shows **502**, **504** and a few **460**s from mobile clients
 
 The alert points at the gateway; the root cause is two hops downstream. The full timeline and the
 expected conclusion live in [`scenarios/5xx_after_deploy.yaml`](scenarios/5xx_after_deploy.yaml).
+
+### 2. Memory leak → OOM kills
+
+`inventory v1.5.0` adds an in-memory stock cache with no size bound. Nothing breaks at first:
+memory climbs from 180 MB toward the 512 MB container limit over 50 minutes, with GC-pause
+warnings along the way. Then Kubernetes starts **OOMKilling** inventory pods about once a minute.
+`checkout` gets connection resets (**502**) and "no healthy upstream" (**503**) while pods restart,
+and the monitor fires on **`checkout`**. `payments` stays healthy.
+
+Two traps make this one harder:
+
+- **The cause is not the latest deploy.** The leaking release shipped 50 minutes before the
+  first error, so "what deployed just before the spike?" gives the wrong answer.
+- **A red herring.** `api-gateway` deploys a harmless config change 3 minutes before the alert.
+  The agent has to rule it out from the metrics, not blame it because of its timing.
+
+See [`scenarios/oom_memory_leak.yaml`](scenarios/oom_memory_leak.yaml).
 
 ## How it works
 
@@ -50,7 +72,7 @@ The agent calls tools such as `search_logs`, `get_metrics`, `get_deploy_events` 
 ```bash
 make up     # start OpenSearch
 make seed   # load the synthetic incident data
-make investigate  # let the agent investigate the sample alert
+make investigate  # let the agent investigate the scenario's alert
 make api    # start the API (terminal 1)
 make ui     # start the UI on :8501 (terminal 2)
 make test   # run tests
@@ -72,7 +94,8 @@ make up
 make seed
 ```
 
-Run `make help` for all commands.
+Run `make help` for all commands. Commands that load data take a scenario, for example
+`make seed SCENARIO=oom_memory_leak` (the default is `5xx_after_deploy`).
 
 ## Investigation tools
 
@@ -122,10 +145,11 @@ in a trace.
 
 ## The UI
 
-`make api` in one terminal, `make ui` in another, then open port 8501 and click
-**Fire sample alert**. The page shows each tool call as the agent makes it, then the report:
+`make api` in one terminal, `make ui` in another, then open port 8501, pick a scenario and click
+**Fire alert**. The UI loads that scenario's data and sends its alert to the webhook. The page shows each tool call as the agent makes it, then the report:
 severity, root cause and confidence, impacted vs. ruled-out services, next steps, the evidence
-behind each claim, and the error rate of every service involved. The UI talks only to the API,
+behind each claim, the error rate of every service involved, and memory against the container
+limit when the service reports it. The UI talks only to the API,
 the same way a real alerting pipeline would.
 
 ## Alert webhook API
@@ -135,7 +159,7 @@ investigates in the background:
 
 ```bash
 make api      # terminal 1: start the API on :8000
-make alert    # terminal 2: send samples/alert_5xx.json
+make alert    # terminal 2: load a scenario and send its alert (SCENARIO=oom_memory_leak for the other)
 # {"incident_id":"inc-3f9a1c2e","status":"investigating","duplicate":false}
 
 curl -s localhost:8000/incidents/inc-3f9a1c2e            # trace so far, then the report
@@ -148,6 +172,8 @@ curl -s localhost:8000/incidents/inc-3f9a1c2e/report.md  # report as Markdown
 | `GET /incidents` | All incidents, newest first. |
 | `GET /incidents/{id}` | Status (`investigating`, `resolved`, `failed`), the live tool-call trace and the report. |
 | `GET /incidents/{id}/report.md` | The report as Markdown. |
+| `GET /demo/scenarios` | The scenarios you can fire. |
+| `POST /demo/scenarios/{name}/fire` | Loads that scenario's data and opens an incident from its alert. |
 
 The webhook behaves the way on-call tooling should:
 
@@ -167,8 +193,9 @@ between requests.
 ## Evaluation
 
 An agent that sounds confident is not the same as an agent that is right. `make eval` runs the
-agent on the scenario several times, re-seeding fresh data each time, and grades every report
-against the scenario's `ground_truth`:
+agent on every scenario several times, re-seeding fresh data each time, and grades every report
+against that scenario's `ground_truth`. The checks are the same for every scenario; the expected
+values come from the scenario file. For the first scenario:
 
 | Check | Passes when |
 |---|---|
@@ -181,8 +208,12 @@ against the scenario's `ground_truth`:
 | `mitigation_first` | The first next step is rolling back `payments` |
 | `evidence_backed` | The evidence cites at least three different tools |
 
+For the memory leak, the same checks expect `inventory` as the root cause (named by `v1.5.0` and
+memory), `memory_leak_oom` as the failure mode, 502/503 at checkout, `payments` ruled out, and a
+first step that rolls back or relieves `inventory`. Blaming the `api-gateway` deploy fails it.
+
 Results land in [`evals/results/`](evals/results/): one JSON per eval with every report, and
-`latest.md` with a pass/fail table. The [Eval workflow](.github/workflows/eval.yml) runs the same
+a `latest-<scenario>.md` pass/fail table per scenario. The [Eval workflow](.github/workflows/eval.yml) runs the same
 thing in GitHub Actions on demand. The scoring itself is unit-tested, so CI checks the grader
 without calling the API.
 
@@ -211,7 +242,7 @@ app/
   incidents/   in-memory incident store
 ui/            Streamlit app (talks only to the API)
 generator/     synthetic logs, metrics and deploys from a scenario file
-scenarios/     the incident timeline and its ground truth
+scenarios/     incident timelines, alerts and their ground truth
 evals/         grading against ground truth, results
 catalog/       service map        runbooks/   on-call runbooks
 ```
@@ -230,6 +261,7 @@ Python 3.12 · FastAPI · Claude API (tool use) · OpenSearch · Streamlit · Do
 - [x] Streamlit UI with live investigation timeline
 - [x] Scenario eval against ground truth
 - [x] Docker image and one-command demo
+- [x] Second scenario: memory leak and OOM kills
 - [ ] Demo video
 
 ## License

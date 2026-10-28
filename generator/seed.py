@@ -50,7 +50,7 @@ def main() -> None:
 
     alert_at = scenario["window"]["alert_at"]
     print(f"Scenario: {scenario['name']}")
-    print(f"Deploy at (T):  {data.deploy_time:%Y-%m-%d %H:%M} UTC")
+    print(f"T (minute 0):   {data.deploy_time:%Y-%m-%d %H:%M} UTC")
     print(f"Alert fires at: T+{alert_at}m")
     for index, count in counts.items():
         print(f"  {index:<20} {count:>6} docs")

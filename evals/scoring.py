@@ -34,7 +34,12 @@ def score(report: IncidentReport, truth: dict[str, Any]) -> list[Check]:
     rc_text = _norm(f"{rc.hypothesis} {rc.trigger}")
     missing_keywords = [k for k in truth["root_cause_keywords"] if k.lower() not in rc_text]
     first_step = _norm(report.next_steps[0]) if report.next_steps else ""
-    missing_step = [k for k in truth["first_step_keywords"] if k.lower() not in first_step]
+    # Either one keyword list, or a list of alternative lists where any one must fully match.
+    groups = truth["first_step_keywords"]
+    if not isinstance(groups[0], list):
+        groups = [groups]
+    misses = [[k for k in g if k.lower() not in first_step] for g in groups]
+    missing_step = [] if any(not m for m in misses) else min(misses, key=len)
     tools_cited = {e.tool for e in report.evidence}
     reported_codes = {(e.service, e.code) for e in report.error_codes}
     missing_codes = [

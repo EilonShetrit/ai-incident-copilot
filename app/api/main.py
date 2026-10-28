@@ -8,6 +8,7 @@ from app.catalog import status_codes
 from app.config import settings
 from app.incidents import Incident, IncidentStatus, store
 from app.models import DatadogAlert
+from app.scenarios import alert_for, scenarios, seed
 from app.tools import get_metrics, get_service_map
 
 app = FastAPI(
@@ -67,6 +68,10 @@ def datadog_webhook(
         response.status_code = status.HTTP_200_OK
         return {"status": "ignored", "reason": f"alert_transition is {alert.alert_transition!r}"}
 
+    return open_incident(alert, background, response)
+
+
+def open_incident(alert: DatadogAlert, background: BackgroundTasks, response: Response) -> dict:
     incident, created = store.create(alert)
     if created:
         background.add_task(run_investigation, incident.id)
@@ -135,3 +140,39 @@ def monitored_status_codes() -> dict:
         str(code): {"emoji": info["emoji"], "label": info["label"], "meaning": info["meaning"]}
         for code, info in status_codes().items()
     }
+
+
+# ---------- demo: synthetic scenarios ----------
+
+
+@app.get("/demo/scenarios")
+def list_scenarios() -> list[dict]:
+    """The synthetic incidents this demo can replay."""
+    return [
+        {
+            "name": name,
+            "description": " ".join(s["description"].split()),
+            "alert": alert_for(s).title,
+        }
+        for name, s in scenarios().items()
+    ]
+
+
+@app.post("/demo/scenarios/{name}/fire", status_code=status.HTTP_202_ACCEPTED)
+def fire_scenario(name: str, background: BackgroundTasks, response: Response) -> dict:
+    """Load a scenario's data into OpenSearch, then send its alert through the normal webhook path.
+
+    Demo only: it replaces whatever data is in the indices.
+    """
+    if name not in scenarios():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No scenario {name!r}")
+    if not settings.anthropic_api_key:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "ANTHROPIC_API_KEY is not set")
+    scenario = scenarios()[name]
+    try:
+        seed(scenario)
+    except Exception as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, f"Could not load data: {type(exc).__name__}"
+        ) from exc
+    return open_incident(alert_for(scenario), background, response)

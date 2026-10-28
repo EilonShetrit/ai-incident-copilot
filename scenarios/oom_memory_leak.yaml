@@ -1,0 +1,137 @@
+# Scenario: a memory leak in `inventory` ends in OOM kills, which surface as 5xx on `checkout`.
+#
+# All times are minutes relative to the first OOM kill (T = 0).
+# The leak shipped 50 minutes earlier, so the deploy that caused it is NOT the most recent one:
+# an unrelated api-gateway deploy lands 3 minutes before the errors start.
+name: oom_memory_leak
+description: >
+  inventory v1.5.0 added an in-memory cache for stock lookups with no size limit. Memory grows
+  for 50 minutes until containers hit their 512Mi limit and get OOMKilled. While pods restart,
+  checkout gets connection resets (502) and "no healthy upstream" (503) from inventory, and the
+  gateway passes them on. payments is healthy. A gateway deploy just before the errors is a
+  red herring.
+alert: samples/alert_oom.json
+
+window:
+  start: -70
+  end: 10
+  alert_at: 5
+
+seed: 7
+requests_per_minute: 40
+
+services:
+  api-gateway:
+    version: v1.12.3
+    baseline: {error_rate: 0.002, latency_p95_ms: 180}
+  checkout:
+    version: v3.8.0
+    baseline: {error_rate: 0.002, latency_p95_ms: 150}
+  payments:
+    version: v2.3.0
+    baseline: {error_rate: 0.001, latency_p95_ms: 120, db_pool_max: 50, db_pool_active: 18}
+  inventory:
+    version: v1.4.2
+    baseline:
+      error_rate: 0.001
+      latency_p95_ms: 60
+      memory_mb: 180
+      memory_limit_mb: 512
+      restarts: 0
+
+deploys:
+  - at: -50
+    service: inventory
+    from_version: v1.4.2
+    to_version: v1.5.0
+    author: dana.k
+    change: "Cache stock lookups in memory to cut DB reads"
+    commit: 4e1d7b0
+  - at: -3
+    service: api-gateway
+    from_version: v1.12.3
+    to_version: v1.12.4
+    author: ci-bot
+    change: "Raise request log sampling to 10%"
+    commit: b77a01c
+
+faults:
+  - service: inventory          # the cache grows without bound
+    starts_at: -50
+    ramp: 48
+    effect: {memory_mb: 505}
+  - service: inventory          # GC thrashing near the limit
+    starts_at: -20
+    ramp: 20
+    effect: {latency_p95_ms: 850}
+  - service: inventory          # OOM kills: about one pod restart a minute
+    starts_at: 0
+    ramp: 1
+    effect: {restarts: 1, memory_mb: 430, error_rate: 0.06, latency_p95_ms: 1400}
+    errors:
+      - status_code: 503
+        weight: 1
+        message: "cache warming after restart, rejecting request"
+  - service: checkout
+    starts_at: 0
+    ramp: 2
+    effect: {error_rate: 0.13, latency_p95_ms: 1900}
+    errors:
+      - status_code: 502
+        weight: 0.6
+        message: "upstream inventory: connection reset by peer"
+      - status_code: 503
+        weight: 0.4
+        message: "no healthy upstream for inventory"
+  - service: api-gateway
+    starts_at: 1
+    ramp: 2
+    effect: {error_rate: 0.11, latency_p95_ms: 2100}
+    errors:
+      - status_code: 502
+        weight: 0.85
+        message: "upstream checkout returned 502 Bad Gateway"
+      - status_code: 503
+        weight: 0.15
+        message: "upstream checkout returned 503 Service Unavailable"
+
+# Log lines that are not request logs.
+events:
+  - at: -48
+    service: inventory
+    message: "stock cache enabled: max_entries=unbounded ttl=none"
+  - at: -30
+    every: 6
+    until: -1
+    service: inventory
+    level: WARN
+    message: "GC pause 1.9s, heap usage 93% of max"
+  - at: 0
+    every: 1
+    until: 9
+    second: 40
+    service: inventory
+    level: ERROR
+    message: "OOMKilled: container inventory exceeded memory limit 512Mi (restart #{n})"
+  - at: -3
+    service: api-gateway
+    message: "config reloaded: request_log_sampling=0.10"
+
+ground_truth:
+  alerted_service: checkout
+  root_cause_service: inventory
+  root_cause_deploy: inventory v1.5.0
+  root_cause: "inventory v1.5.0 added an unbounded in-memory cache; memory leak ends in OOM kills"
+  impacted_services: [api-gateway, checkout, inventory]
+  healthy_services: [payments]
+  expected_next_step: "Roll back inventory to v1.4.2 (or raise its memory limit to buy time)"
+  root_cause_keywords: [v1.5.0, memory]
+  # Any one group passing is enough: roll back, or buy time with memory/restarts.
+  first_step_keywords:
+    - [rollback, inventory]
+    - [memory, inventory]
+    - [scale, inventory]
+  failure_mode: memory_leak_oom
+  key_error_codes:
+    checkout: [502, 503]
+    api-gateway: [502]

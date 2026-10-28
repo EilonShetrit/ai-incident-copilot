@@ -22,7 +22,8 @@ PATHS = {
     "inventory": ["/inventory/reserve", "/inventory/stock"],
 }
 HTTP_METHOD = {"api-gateway": "POST", "checkout": "POST", "payments": "POST", "inventory": "GET"}
-METRIC_FIELDS = ("error_rate", "latency_p95_ms", "db_pool_max", "db_pool_active")
+# Optional per-service gauges, emitted when the scenario defines them.
+GAUGES = ("db_pool_max", "db_pool_active", "memory_mb", "memory_limit_mb", "restarts")
 REQUESTS_SCALE = 25  # each sampled log line stands for this many real requests
 
 
@@ -140,7 +141,7 @@ def generate(scenario: dict[str, Any], anchor: datetime | None = None) -> Datase
                         "latency_ms": _latency(rng, values["latency_p95_ms"]),
                         "trace_id": f"{rng.getrandbits(64):016x}",
                         "host": f"{service}-{rng.randint(1, 3)}",
-                        "message": message if level == "ERROR" else f"{path} {status}",
+                        "message": message if status != 200 else f"{path} {status}",
                     }
                 )
 
@@ -153,9 +154,14 @@ def generate(scenario: dict[str, Any], anchor: datetime | None = None) -> Datase
                 "error_rate": round(errors / rpm, 4),
                 "latency_p95_ms": round(values["latency_p95_ms"] * rng.uniform(0.93, 1.07)),
             }
-            for key in ("db_pool_max", "db_pool_active"):
+            for key in GAUGES:
                 if key in values:
-                    metric[key] = round(values[key])
+                    value = values[key]
+                    if key == "memory_mb":  # real memory never sits perfectly still
+                        value = min(
+                            value * rng.uniform(0.98, 1.02), values.get("memory_limit_mb", value)
+                        )
+                    metric[key] = round(value)
             data.metrics.append(metric)
 
     # Startup log lines from the deploy itself: the evidence a good investigation finds.
@@ -176,6 +182,26 @@ def generate(scenario: dict[str, Any], anchor: datetime | None = None) -> Datase
                     ),
                 }
             )
+
+    # Scripted log lines: Kubernetes events, GC warnings, startup config...
+    for event in scenario.get("events", []):
+        minute, n = event["at"], 1
+        while minute <= event.get("until", event["at"]) and minute < window["end"]:
+            service = event["service"]
+            data.logs.append(
+                {
+                    "@timestamp": _iso(
+                        anchor + timedelta(minutes=minute, seconds=event.get("second", 20))
+                    ),
+                    "service": service,
+                    "version": _version_at(scenario, service, minute),
+                    "level": event.get("level", "INFO"),
+                    "host": event.get("host", f"{service}-{(n - 1) % 3 + 1}"),
+                    "message": event["message"].format(n=n),
+                }
+            )
+            minute += event.get("every", 1e9)
+            n += 1
 
     data.logs.sort(key=lambda d: d["@timestamp"])
     return data

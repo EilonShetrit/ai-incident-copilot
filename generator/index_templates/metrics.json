@@ -12,7 +12,10 @@
         "error_rate": {"type": "float"},
         "latency_p95_ms": {"type": "integer"},
         "db_pool_max": {"type": "integer"},
-        "db_pool_active": {"type": "integer"}
+        "db_pool_active": {"type": "integer"},
+        "memory_mb": {"type": "integer"},
+        "memory_limit_mb": {"type": "integer"},
+        "restarts": {"type": "integer"}
       }
     }
   }

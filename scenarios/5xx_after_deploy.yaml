@@ -8,6 +8,8 @@ description: >
   for a connection, payments returns 503, checkout returns 502, and the 5xx rate on
   api-gateway jumps. inventory is healthy and must be ruled out.
 
+alert: samples/alert_5xx.json
+
 window:
   start: -60          # first data point
   end: 10             # last data point (anchored to "now" when seeding)

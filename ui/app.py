@@ -47,6 +47,10 @@ TOOL_ICON = {
     "get_error_codes": "🚦",
     "get_failure_modes": "🧭",
 }
+SCENARIO_LABELS = {
+    "5xx_after_deploy": "5xx spike after a deploy",
+    "oom_memory_leak": "Memory leak → OOM kills",
+}
 IMPACTED_LINE_COLORS = ["#E5484D", "#F08C3A", "#A855F7", "#0EA5E9", "#EC4899"]
 HEALTHY_LINE_COLOR = "#B8BEC9"
 
@@ -124,12 +128,19 @@ with st.sidebar:
         st.error(f"API not reachable at {api_client.API_URL}. Start it with `make api`.")
         st.stop()
 
-    if st.button("Fire sample alert", type="primary", icon="🔔", use_container_width=True):
+    demo = {s["name"]: s for s in api_client.list_scenarios()}
+    choice = st.selectbox(
+        "Scenario",
+        list(demo),
+        format_func=lambda n: SCENARIO_LABELS.get(n, n),
+    )
+    if st.button("Fire alert", type="primary", icon="🔔", use_container_width=True):
         try:
-            st.session_state.selected = api_client.fire_sample_alert()["incident_id"]
+            with st.spinner("Loading the scenario's data…"):
+                st.session_state.selected = api_client.fire_scenario(choice)["incident_id"]
         except httpx.HTTPStatusError as exc:
             st.error(exc.response.json().get("detail", str(exc)))
-    st.caption("Sends a Datadog-style webhook: *api-gateway 5xx rate above 5%*.")
+    st.caption(f"Sends a Datadog-style webhook: *{demo[choice]['alert']}*")
 
     incidents = api_client.list_incidents()
     if incidents:
@@ -174,7 +185,7 @@ if not incidents:
             st.markdown(f"### {icon}")
             st.markdown(f"**{title}**")
             st.caption(text)
-    st.info("Click **Fire sample alert** in the sidebar to start.", icon="👈")
+    st.info("Pick a scenario and click **Fire alert** in the sidebar to start.", icon="👈")
     st.stop()
 
 
@@ -233,23 +244,60 @@ def render_error_rates(impacted: list[str], healthy: list[str], deploys) -> None
             tooltip=["service", alt.Tooltip("time:T", format="%H:%M"), "error_rate:Q"],
         )
     )
-    chart = lines
-    if deploys:
-        marks = pd.DataFrame(
-            [{"time": pd.to_datetime(t), "label": f"🚀 {label}"} for t, label in deploys]
-        )
-        rule = alt.Chart(marks).mark_rule(strokeDash=[4, 4], color="#4F46E5").encode(x="time:T")
-        text = (
-            alt.Chart(marks)
-            .mark_text(align="left", dx=6, dy=-6, color="#4F46E5", fontWeight=600)
-            .encode(x="time:T", y=alt.value(12), text="label:N")
-        )
-        chart = lines + rule + text
+    chart = lines + deploy_marks(deploys) if deploys else lines
 
     with st.container(border=True):
         st.markdown("**Error rate, last 30 minutes**")
         st.caption("Impacted services in color, ruled-out services in gray, deploys dashed.")
         st.altair_chart(chart.properties(height=260), use_container_width=True)
+
+
+def deploy_marks(deploys):
+    marks = pd.DataFrame(
+        [{"time": pd.to_datetime(t), "label": f"🚀 {label}"} for t, label in deploys]
+    )
+    rule = alt.Chart(marks).mark_rule(strokeDash=[4, 4], color="#4F46E5").encode(x="time:T")
+    text = (
+        alt.Chart(marks)
+        .mark_text(align="left", dx=6, dy=-6, color="#4F46E5", fontWeight=600)
+        .encode(x="time:T", y=alt.value(12), text="label:N")
+    )
+    return rule + text
+
+
+def render_memory(services: list[str], deploys) -> None:
+    """Memory used vs limit, for services that report memory (shown for leaks and OOMs)."""
+    rows = []
+    for service in services:
+        metrics = api_client.service_metrics(service, minutes=75)
+        for point in (metrics or {}).get("series", []):
+            if "memory_mb" in point:
+                time = pd.to_datetime(point["@timestamp"])
+                rows.append({"time": time, "series": f"{service} used", "mb": point["memory_mb"]})
+                rows.append(
+                    {"time": time, "series": f"{service} limit", "mb": point["memory_limit_mb"]}
+                )
+    if not rows:
+        return
+    df = pd.DataFrame(rows)
+    lines = (
+        alt.Chart(df)
+        .mark_line(strokeWidth=2.2)
+        .encode(
+            x=alt.X("time:T", title=None, axis=alt.Axis(format="%H:%M", grid=False)),
+            # headroom so deploy labels sit above the limit line
+            y=alt.Y("mb:Q", title="MB", scale=alt.Scale(domain=[0, df["mb"].max() * 1.25])),
+            color=alt.Color("series:N", legend=alt.Legend(orient="top", title=None)),
+            strokeDash=alt.condition(
+                "indexof(datum.series, 'limit') >= 0", alt.value([2, 3]), alt.value([1, 0])
+            ),
+        )
+    )
+    with st.container(border=True):
+        st.markdown("**Memory, last 75 minutes**")
+        st.caption("Memory used vs. container limit, deploys dashed.")
+        chart = lines + deploy_marks(deploys) if deploys else lines
+        st.altair_chart(chart.properties(height=220), use_container_width=True)
 
 
 def render_failure_mode_and_codes(report: dict) -> None:
@@ -342,9 +390,9 @@ def render_report(incident: dict) -> None:
         if report["runbook"]:
             st.caption(f"Runbook: {report['runbook']}")
 
-    render_error_rates(
-        report["impacted_services"], report["healthy_services"], deploy_times(incident["trace"])
-    )
+    deploys = deploy_times(incident["trace"])
+    render_error_rates(report["impacted_services"], report["healthy_services"], deploys)
+    render_memory(report["impacted_services"], deploys)
 
     with st.expander("Evidence", expanded=True):
         st.markdown("\n".join(f"- `{e['tool']}`: {e['finding']}" for e in report["evidence"]))

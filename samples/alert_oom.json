@@ -1,0 +1,9 @@
+{
+  "id": "7381920112",
+  "title": "[Triggered] checkout 5xx error rate is above 5%",
+  "body": "5xx error rate on checkout is 12.1% over the last 5 minutes (threshold 5%).\n\nError Codes Monitored:\n* 460 - 🛑 Client Closed Connection Before Timeout\n* 500 - 🔧 Internal Server Error\n* 501 - 🚫 Not Implemented\n* 502 - 🌐 Bad Gateway\n* 503 - ⏳ Service Unavailable\n* 504 - ⏰ Gateway Timeout",
+  "alert_transition": "Triggered",
+  "priority": "P2",
+  "alert_query": "sum(last_5m):sum:http.requests{service:checkout,status_class:5xx}.as_count() / sum:http.requests{service:checkout}.as_count() > 0.05",
+  "tags": "service:checkout,env:prod,team:commerce"
+}

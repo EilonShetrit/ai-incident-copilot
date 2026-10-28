@@ -1,6 +1,7 @@
 """Run the agent on a scenario several times and grade every report against ground truth.
 
-    uv run python -m evals.run --runs 3
+    uv run python -m evals.run --runs 3                      # every scenario
+    uv run python -m evals.run --scenario oom_memory_leak    # one scenario
 
 Each run re-seeds OpenSearch, so the data is fresh relative to "now". Needs ANTHROPIC_API_KEY
 and a running OpenSearch. Results go to evals/results/.
@@ -11,7 +12,7 @@ import json
 import sys
 import time
 from dataclasses import asdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -19,22 +20,15 @@ from pydantic import ValidationError
 from app.agent import IncidentReport, investigate
 from app.clients.opensearch import get_client
 from app.config import settings
-from app.models import DatadogAlert
+from app.scenarios import alert_for, scenarios, seed
 from evals.scoring import score
-from generator.generate import generate, load_scenario
-from generator.seed import install_templates, load
 
 RESULTS_DIR = Path(__file__).parent / "results"
 
 
-def run_once(scenario: dict, alert_payload: dict) -> dict:
-    client = get_client()
-    install_templates(client)
-    load(client, generate(scenario))
-    minutes_since_alert = scenario["window"]["end"] - scenario["window"]["alert_at"]
-    alert = DatadogAlert.model_validate(
-        {**alert_payload, "date": datetime.now(UTC) - timedelta(minutes=minutes_since_alert)}
-    )
+def run_once(scenario: dict) -> dict:
+    seed(scenario)
+    alert = alert_for(scenario)
 
     started = time.perf_counter()
     result = investigate(alert)
@@ -100,15 +94,16 @@ def regrade(path: Path, scenario: dict) -> None:
     summary["regraded"] = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     path.write_text(json.dumps(summary, indent=2))
     markdown = to_markdown(summary)
-    (RESULTS_DIR / "latest.md").write_text(markdown)
+    (RESULTS_DIR / f"latest-{summary['scenario']}.md").write_text(markdown)
     print(markdown)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Grade the agent against ground truth.")
-    parser.add_argument("--scenario", default="scenarios/5xx_after_deploy.yaml")
-    parser.add_argument("--alert", default="samples/alert_5xx.json")
-    parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument(
+        "--scenario", action="append", help="Scenario name (repeatable). Default: all scenarios"
+    )
+    parser.add_argument("--runs", type=int, default=3, help="Runs per scenario")
     parser.add_argument(
         "--regrade",
         metavar="RESULTS_JSON",
@@ -117,7 +112,8 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.regrade:
-        regrade(Path(args.regrade), load_scenario(args.scenario))
+        summary = json.loads(Path(args.regrade).read_text())
+        regrade(Path(args.regrade), scenarios()[summary["scenario"]])
         return
 
     if not settings.anthropic_api_key:
@@ -125,12 +121,19 @@ def main() -> None:
     if not get_client().ping():
         sys.exit(f"OpenSearch is not reachable at {settings.opensearch_url}. Run `make up`.")
 
-    scenario = load_scenario(args.scenario)
-    alert_payload = json.loads(Path(args.alert).read_text())
+    names = args.scenario or list(scenarios())
+    unknown = set(names) - set(scenarios())
+    if unknown:
+        sys.exit(f"Unknown scenario(s) {sorted(unknown)}. Available: {sorted(scenarios())}")
+    for name in names:
+        evaluate(scenarios()[name], args.runs)
+
+
+def evaluate(scenario: dict, n_runs: int) -> None:
     runs = []
-    for n in range(1, args.runs + 1):
-        print(f"Run {n}/{args.runs}...", file=sys.stderr)
-        runs.append(run_once(scenario, alert_payload))
+    for n in range(1, n_runs + 1):
+        print(f"{scenario['name']}: run {n}/{n_runs}...", file=sys.stderr)
+        runs.append(run_once(scenario))
         print(f"  {runs[-1]['passed']}/{runs[-1]['total']} checks passed", file=sys.stderr)
 
     summary = {
@@ -144,7 +147,7 @@ def main() -> None:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     (RESULTS_DIR / f"{scenario['name']}-{stamp}.json").write_text(json.dumps(summary, indent=2))
     markdown = to_markdown(summary)
-    (RESULTS_DIR / "latest.md").write_text(markdown)
+    (RESULTS_DIR / f"latest-{scenario['name']}.md").write_text(markdown)
     print(markdown)
 
 
