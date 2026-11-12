@@ -81,11 +81,22 @@ st.html(
   .kpi-value { font-family: Anton, sans-serif, Arial; font-size: 1.6rem; font-weight: 400;
                margin-top: 2px; line-height: 1.5;
                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .codes-wrap { width: 100%; overflow-x: auto; container-type: inline-size; }
   table.codes { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
   table.codes th { color: #6B6585; font-weight: 600; font-size: 0.75rem; text-align: right;
                    padding: 4px 6px; border: none; white-space: nowrap; }
   table.codes td { padding: 5px 6px; border: none; border-top: 1px solid #EDE8FD; }
-  table.codes td.code { white-space: nowrap; }
+  /* The label wraps when space is tight, so the count columns always stay in the card. */
+  table.codes th { white-space: nowrap !important; }
+  /* In a narrow card show just the code and emoji (full label in the tooltip), so the
+     count columns stay inside the card. */
+  @container (max-width: 520px) {
+    table.codes .lbl { display: none; }
+    table.codes th, table.codes td { padding-left: 3px; padding-right: 3px; }
+    table.codes th { white-space: normal !important; font-size: 0.65rem; }
+    table.codes td.code { white-space: nowrap; }
+  }
+  table.codes td.n, table.codes td.zero { white-space: nowrap; }
   table.codes td.n { text-align: right; font-weight: 700; color: #E0185F; }
   table.codes td.zero { text-align: right; color: #CFCADF; }
   table.codes tr.dim td.code { color: #A39DBA; }
@@ -328,7 +339,8 @@ def render_failure_mode_and_codes(report: dict) -> None:
         legend = api_client.status_codes()
         services = list(dict.fromkeys(e["service"] for e in report["error_codes"]))
         counts = {(e["service"], e["code"]): e["count"] for e in report["error_codes"]}
-        head = "".join(f"<th>{html.escape(s)}</th>" for s in services)
+        # <wbr> lets "api-gateway" break after the hyphen in a narrow card.
+        head = "".join(f"<th>{html.escape(s).replace('-', '-<wbr>')}</th>" for s in services)
         rows = []
         for code, info in legend.items():
             cells = []
@@ -336,12 +348,14 @@ def render_failure_mode_and_codes(report: dict) -> None:
                 n = counts.get((service, int(code)), 0)
                 cells.append(f'<td class="{"n" if n else "zero"}">{n or "·"}</td>')
             seen = any(counts.get((s, int(code))) for s in services)
+            label = html.escape(info["label"])
             rows.append(
-                f'<tr class="{"" if seen else "dim"}"><td class="code">{code} - '
-                f"{info['emoji']} {html.escape(info['label'])}</td>{''.join(cells)}</tr>"
+                f'<tr class="{"" if seen else "dim"}"><td class="code" title="{label}">{code} - '
+                f'{info["emoji"]}<span class="lbl"> {label}</span></td>{"".join(cells)}</tr>'
             )
         st.markdown(
-            f'<table class="codes"><tr><th></th>{head}</tr>{"".join(rows)}</table>',
+            f'<div class="codes-wrap"><table class="codes"><tr><th></th>{head}</tr>'
+            f"{''.join(rows)}</table></div>",
             unsafe_allow_html=True,
         )
 
