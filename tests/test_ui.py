@@ -143,7 +143,7 @@ def test_resolved_shows_report(fake_api):
     assert "<b>Do now:</b> Roll back payments to v2.3.0" in text
     assert "Database connection pool exhaustion" in text
     assert '502 - 🌐<span class="lbl"> Bad Gateway</span>' in text
-    assert '<tr class="dim"><td class="code">501 - 🚫 Not Implemented' in text
+    assert '<tr class="dim"><td class="code" title="Not Implemented">501 - 🚫' in text
 
 
 def test_failed_shows_error(fake_api):
