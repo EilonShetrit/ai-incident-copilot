@@ -1,17 +1,20 @@
+# Palette and type after rapyd.net: violet, pink, green and yellow on white, Anton headings.
 [theme]
 base = "light"
-primaryColor = "#4F46E5"
-backgroundColor = "#F7F8FB"
-secondaryBackgroundColor = "#EEF0F6"
-textColor = "#1E2330"
-borderColor = "#E3E6EE"
+primaryColor = "#5A34EA"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F3F0FE"
+textColor = "#14112B"
+borderColor = "#E6E1FB"
 baseRadius = "0.75rem"
 font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Anton:https://fonts.googleapis.com/css2?family=Anton&display=swap"
+headingFontWeights = 400
 codeFont = "'JetBrains Mono', monospace"
 
 [theme.sidebar]
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F3F4F8"
+backgroundColor = "#F7F5FF"
+secondaryBackgroundColor = "#EDE8FD"
 
 [client]
 toolbarMode = "viewer"

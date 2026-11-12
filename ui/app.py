@@ -17,16 +17,18 @@ from ui import api_client
 st.set_page_config(page_title="AI Incident Copilot", page_icon="🛟", layout="wide")
 
 # Soft colors: red is reserved for what is actually broken.
+# Brand palette: violet #5A34EA, pink #FA377B, green #3CFE85, yellow #EDF34B. The green and
+# yellow are too light for text, so they are backgrounds with dark text on top.
 COLORS = {
-    "accent": "#4F46E5",
-    "muted": "#6B7280",
-    "bad": "#E5484D",
-    "bad_bg": "#FDECEC",
-    "warn": "#D97706",
-    "warn_bg": "#FEF3E2",
-    "ok": "#16A34A",
-    "ok_bg": "#E8F7EE",
-    "info_bg": "#EEF0FD",
+    "accent": "#5A34EA",
+    "muted": "#6B6585",
+    "bad": "#E0185F",
+    "bad_bg": "#FFE3EE",
+    "warn": "#5C5A00",
+    "warn_bg": "#EDF34B",
+    "ok": "#0B6B36",
+    "ok_bg": "#C9FFDD",
+    "info_bg": "#EDE8FD",
 }
 STATUS = {
     "investigating": ("Investigating", COLORS["accent"], COLORS["info_bg"]),
@@ -51,37 +53,42 @@ SCENARIO_LABELS = {
     "5xx_after_deploy": "502/503/504 spike after a deploy",
     "oom_memory_leak": "Memory leak → OOM kills",
 }
-IMPACTED_LINE_COLORS = ["#E5484D", "#F08C3A", "#A855F7", "#0EA5E9", "#EC4899"]
-HEALTHY_LINE_COLOR = "#B8BEC9"
+IMPACTED_LINE_COLORS = ["#FA377B", "#5A34EA", "#F59E0B", "#0EA5E9", "#14B866"]
+HEALTHY_LINE_COLOR = "#C9C4DB"
 
 st.html(
     """
 <style>
   .block-container { padding-top: 2.2rem; max-width: 1280px; }
-  h1, h2, h3 { letter-spacing: -0.01em; }
+  h1, h2, h3, .alert-title, .hero { font-family: Anton, sans-serif, Arial; font-weight: 400;
+                                    letter-spacing: 0.01em; text-transform: uppercase; }
+  .hero { font-size: 90px; line-height: 1.0; color: #14112B; margin: 4px 0 18px 0; }
+  .hero .hl { color: #5A34EA; }
+  @media (max-width: 900px) { .hero { font-size: 56px; } }
   .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.78rem;
           font-weight: 600; line-height: 1.6; margin-right: 6px; }
-  .eyebrow { color: #6B7280; font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
+  .eyebrow { color: #5A34EA; font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
              letter-spacing: 0.06em; margin-bottom: 2px; }
-  .alert-title { font-size: 1.6rem; font-weight: 700; margin: 0 0 6px 0; line-height: 1.25; }
-  .meta { color: #6B7280; font-size: 0.85rem; }
-  .tag { display: inline-block; background: #EEF0F6; color: #4B5263; border-radius: 6px;
+  .alert-title { font-size: 2.6rem; margin: 0 0 8px 0; line-height: 1.1; }
+  .meta { color: #6B6585; font-size: 0.85rem; }
+  .tag { display: inline-block; background: #EDE8FD; color: #3B2A8F; border-radius: 6px;
          padding: 1px 8px; font-size: 0.75rem; margin: 0 4px 4px 0; }
-  .step-now { background: #EEF0FD; border-left: 3px solid #4F46E5; padding: 10px 14px;
-              border-radius: 8px; margin-bottom: 8px; }
-  .step { padding: 6px 14px; color: #374151; }
-  .kpi-label { color: #6B7280; font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  .step-now { background: #EDF34B; border-left: 4px solid #5A34EA; color: #14112B;
+              padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; }
+  .step { padding: 6px 14px; color: #2E2A47; }
+  .kpi-label { color: #6B6585; font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
                letter-spacing: 0.04em; white-space: nowrap; }
-  .kpi-value { font-size: 1.1rem; font-weight: 700; margin-top: 2px; line-height: 1.5;
+  .kpi-value { font-family: Anton, sans-serif, Arial; font-size: 1.6rem; font-weight: 400;
+               margin-top: 2px; line-height: 1.5;
                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   table.codes { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  table.codes th { color: #6B7280; font-weight: 600; font-size: 0.75rem; text-align: right;
+  table.codes th { color: #6B6585; font-weight: 600; font-size: 0.75rem; text-align: right;
                    padding: 4px 6px; border: none; white-space: nowrap; }
-  table.codes td { padding: 5px 6px; border: none; border-top: 1px solid #EEF0F6; }
+  table.codes td { padding: 5px 6px; border: none; border-top: 1px solid #EDE8FD; }
   table.codes td.code { white-space: nowrap; }
-  table.codes td.n { text-align: right; font-weight: 600; color: #E5484D; }
-  table.codes td.zero { text-align: right; color: #C4C8D2; }
-  table.codes tr.dim td.code { color: #9CA3AF; }
+  table.codes td.n { text-align: right; font-weight: 700; color: #E0185F; }
+  table.codes td.zero { text-align: right; color: #CFCADF; }
+  table.codes tr.dim td.code { color: #A39DBA; }
   [data-testid="stExpander"] details summary p { font-size: 0.9rem; }
 </style>
 """
@@ -167,8 +174,11 @@ with st.sidebar:
 
 if not incidents:
     st.markdown('<div class="eyebrow">AI Incident Copilot</div>', unsafe_allow_html=True)
-    st.header("No incidents yet")
-    st.markdown("When an alert fires, the copilot does the first 15 minutes of on-call for you.")
+    st.markdown(
+        '<div class="hero">The first 15 minutes<br>of on-call, <span class="hl">done.</span></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("No incidents yet. When an alert fires, the copilot investigates it for you.")
     cols = st.columns(3)
     steps = [
         ("🔔", "1. Alert arrives", "A Datadog-style webhook hits the API."),
@@ -256,10 +266,10 @@ def deploy_marks(deploys):
     marks = pd.DataFrame(
         [{"time": pd.to_datetime(t), "label": f"🚀 {label}"} for t, label in deploys]
     )
-    rule = alt.Chart(marks).mark_rule(strokeDash=[4, 4], color="#4F46E5").encode(x="time:T")
+    rule = alt.Chart(marks).mark_rule(strokeDash=[4, 4], color="#5A34EA").encode(x="time:T")
     text = (
         alt.Chart(marks)
-        .mark_text(align="left", dx=6, dy=-6, color="#4F46E5", fontWeight=600)
+        .mark_text(align="left", dx=6, dy=-6, color="#5A34EA", fontWeight=600)
         .encode(x="time:T", y=alt.value(12), text="label:N")
     )
     return rule + text
@@ -287,7 +297,11 @@ def render_memory(services: list[str], deploys) -> None:
             x=alt.X("time:T", title=None, axis=alt.Axis(format="%H:%M", grid=False)),
             # headroom so deploy labels sit above the limit line
             y=alt.Y("mb:Q", title="MB", scale=alt.Scale(domain=[0, df["mb"].max() * 1.25])),
-            color=alt.Color("series:N", legend=alt.Legend(orient="top", title=None)),
+            color=alt.Color(
+                "series:N",
+                legend=alt.Legend(orient="top", title=None),
+                scale=alt.Scale(range=["#FA377B", "#5A34EA"]),  # limit pink, used violet
+            ),
             strokeDash=alt.condition(
                 "indexof(datum.series, 'limit') >= 0", alt.value([2, 3]), alt.value([1, 0])
             ),

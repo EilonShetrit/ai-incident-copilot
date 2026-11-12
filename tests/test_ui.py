@@ -118,7 +118,7 @@ def test_api_down_shows_how_to_start_it(monkeypatch):
 
 def test_empty_state(fake_api):
     at = run()
-    assert at.header[0].value == "No incidents yet"
+    assert any("No incidents yet" in m.value for m in at.markdown)
     assert "Fire alert" in at.info[0].value
 
 
