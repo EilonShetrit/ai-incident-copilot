@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from ui import api_client
+from ui.thoughts import thought
 
 st.set_page_config(page_title="AI Incident Copilot", page_icon="🛟", layout="wide")
 
@@ -39,15 +40,6 @@ SEVERITY = {
     "SEV1": (COLORS["bad"], COLORS["bad_bg"]),
     "SEV2": (COLORS["warn"], COLORS["warn_bg"]),
     "SEV3": (COLORS["accent"], COLORS["info_bg"]),
-}
-TOOL_ICON = {
-    "get_deploy_events": "🚀",
-    "search_logs": "📜",
-    "get_metrics": "📈",
-    "get_service_map": "🗺️",
-    "get_runbook": "📘",
-    "get_error_codes": "🚦",
-    "get_failure_modes": "🧭",
 }
 SCENARIO_LABELS = {
     "5xx_after_deploy": "502/503/504 spike after a deploy",
@@ -117,13 +109,13 @@ def short_time(value: str | None) -> str:
     return value or ""
 
 
-def describe_call(call: dict) -> str:
+def call_details(call: dict) -> str:
+    """Tool call, time window and duration, shown inside the step."""
     args = ", ".join(f"{k}={v}" for k, v in call["input"].items() if k not in ("start", "end"))
     window = ""
     if "start" in call["input"]:
         window = f" · {short_time(call['input']['start'])}–{short_time(call['input'].get('end'))}"
-    icon = "⚠️" if call["is_error"] else TOOL_ICON.get(call["tool"], "🔧")
-    return f"{icon} {call['tool']}({args}){window} · {call['duration_ms']} ms"
+    return f"`{call['tool']}({args})`{window} · {call['duration_ms']} ms"
 
 
 def deploy_times(trace: list[dict]) -> list[tuple[str, str]]:
@@ -216,8 +208,9 @@ def render_trace(trace: list[dict], investigating: bool) -> None:
     )
     if investigating:
         st.info("The agent is investigating…", icon="🔎")
-    for n, call in enumerate(trace, 1):
-        with st.expander(f"{n}. {describe_call(call)}"):
+    for call in trace:
+        with st.expander(thought(call)):
+            st.caption(call_details(call))
             st.caption("Input")
             st.json(call["input"])
             st.caption("Result")

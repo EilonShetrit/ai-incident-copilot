@@ -4,6 +4,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from ui import api_client
+from ui.thoughts import thought
 
 REPORT = {
     "title": "payments v2.4.0 shrank its DB pool",
@@ -128,8 +129,24 @@ def test_investigating_shows_live_trace(fake_api):
     assert not at.exception
     assert "investigating" in at.info[0].value
     assert "Investigating" in "".join(m.value for m in at.markdown)
-    assert "get_deploy_events" in at.expander[0].label
-    assert "11:30–now" in at.expander[0].label
+    assert at.expander[0].label == "🚀 Looking for recent deploys…"
+    assert "11:30–now" in "".join(c.value for c in at.caption)
+
+
+def test_thought_lines():
+    def call(tool, is_error=False, **args):
+        return {"tool": tool, "input": args, "is_error": is_error, "duration_ms": 1}
+
+    assert thought(call("get_service_map")) == "🗺️ Getting service map…"
+    assert thought(call("get_metrics", service="checkout")) == ("📈 Checking checkout metrics…")
+    assert (
+        thought(call("search_logs", service="inventory", level="ERROR", query="OOMKilled"))
+        == '📜 Searching inventory ERROR logs for "OOMKilled"…'
+    )
+    assert thought(call("get_runbook", name="memory_pressure")) == (
+        "📘 Reading the memory_pressure runbook…"
+    )
+    assert thought(call("get_metrics", True, service="x")) == ("⚠️ Checking x metrics failed")
 
 
 def test_resolved_shows_report(fake_api):
