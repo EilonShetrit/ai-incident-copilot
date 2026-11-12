@@ -142,7 +142,7 @@ def test_resolved_shows_report(fake_api):
     assert "pool max_size 5" in text
     assert "<b>Do now:</b> Roll back payments to v2.3.0" in text
     assert "Database connection pool exhaustion" in text
-    assert "502 - 🌐 Bad Gateway" in text
+    assert '502 - 🌐<span class="lbl"> Bad Gateway</span>' in text
     assert '<tr class="dim"><td class="code">501 - 🚫 Not Implemented' in text
 
 
