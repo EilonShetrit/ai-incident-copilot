@@ -1,9 +1,9 @@
 {
   "id": "7381920388",
-  "title": "[Triggered] checkout HTTP error rate is above 5%",
-  "body": "HTTP error rate on checkout is 21.6% over the last 5 minutes (threshold 5%).\n\nError Codes Monitored:\n* 460 - 🛑 Client Closed Connection Before Timeout\n* 500 - 🔧 Internal Server Error\n* 501 - 🚫 Not Implemented\n* 502 - 🌐 Bad Gateway\n* 503 - ⏳ Service Unavailable\n* 504 - ⏰ Gateway Timeout",
+  "title": "[Triggered] checkout order submit failures are above 5%",
+  "body": "21.6% of POST /checkout/submit requests failed over the last 5 minutes (threshold 5%).\n\nError Codes Monitored:\n* 460 - 🛑 Client Closed Connection Before Timeout\n* 500 - 🔧 Internal Server Error\n* 501 - 🚫 Not Implemented\n* 502 - 🌐 Bad Gateway\n* 503 - ⏳ Service Unavailable\n* 504 - ⏰ Gateway Timeout",
   "alert_transition": "Triggered",
   "priority": "P2",
-  "alert_query": "sum(last_5m):sum:http.requests{service:checkout,status_code:(460 OR 500 OR 501 OR 502 OR 503 OR 504)}.as_count() / sum:http.requests{service:checkout}.as_count() > 0.05",
+  "alert_query": "sum(last_5m):sum:http.requests{service:checkout,resource:post_/checkout/submit,status_code:(460 OR 500 OR 501 OR 502 OR 503 OR 504)}.as_count() / sum:http.requests{service:checkout,resource:post_/checkout/submit}.as_count() > 0.05",
   "tags": "service:checkout,env:prod,team:commerce"
 }

@@ -1,9 +1,9 @@
 {
   "id": "7381920245",
-  "title": "[Triggered] api-gateway HTTP error rate is above 5%",
-  "body": "HTTP error rate on api-gateway is 15.8% over the last 5 minutes (threshold 5%).\n\nError Codes Monitored:\n* 460 - 🛑 Client Closed Connection Before Timeout\n* 500 - 🔧 Internal Server Error\n* 501 - 🚫 Not Implemented\n* 502 - 🌐 Bad Gateway\n* 503 - ⏳ Service Unavailable\n* 504 - ⏰ Gateway Timeout",
+  "title": "[Triggered] api-gateway requests timing out: p95 above 5s and 502/504 rate above 5%",
+  "body": "p95 latency on api-gateway is 5.6s and the 502/504 rate is 15.8% over the last 5 minutes (thresholds 5s and 5%).\n\nError Codes Monitored:\n* 460 - 🛑 Client Closed Connection Before Timeout\n* 500 - 🔧 Internal Server Error\n* 501 - 🚫 Not Implemented\n* 502 - 🌐 Bad Gateway\n* 503 - ⏳ Service Unavailable\n* 504 - ⏰ Gateway Timeout",
   "alert_transition": "Triggered",
   "priority": "P2",
-  "alert_query": "sum(last_5m):sum:http.requests{service:api-gateway,status_code:(460 OR 500 OR 501 OR 502 OR 503 OR 504)}.as_count() / sum:http.requests{service:api-gateway}.as_count() > 0.05",
+  "alert_query": "a && b; a: avg(last_5m):p95:trace.http.request.duration{service:api-gateway} > 5; b: sum(last_5m):sum:http.requests{service:api-gateway,status_code:(502 OR 504)}.as_count() / sum:http.requests{service:api-gateway}.as_count() > 0.05",
   "tags": "service:api-gateway,env:prod,team:platform"
 }
