@@ -167,6 +167,10 @@ in a trace.
   error it can recover from, instead of crashing the run.
 - **Guardrails.** A turn limit, explicit handling of refusals and `max_tokens`, and
   server-side model fallbacks if a request is declined.
+- **Cost and time per investigation.** Every turn is priced from the token usage the API
+  returns, by the model that actually served it (a fallback can differ), with prompt-cache reads
+  and writes at their own rates. The UI, the CLI and the eval report show seconds and dollars
+  per investigation. Prices live in [`app/agent/pricing.py`](app/agent/pricing.py).
 - **Tested without the API.** [`tests/test_agent.py`](tests/test_agent.py) drives the loop with
   a scripted fake Claude client, so CI needs no API key.
 
@@ -244,7 +248,8 @@ expects a first step that restores the schema, not a plain code rollback; the lo
 expects `checkout`'s debug log level as the cause and no failed requests in the error breakdown.
 
 Results land in [`evals/results/`](evals/results/): one JSON per eval with every report, and
-a `latest-<scenario>.md` pass/fail table per scenario. The [Eval workflow](.github/workflows/eval.yml) runs the same
+a `latest-<scenario>.md` pass/fail table per scenario, with the average cost and time per
+investigation. The [Eval workflow](.github/workflows/eval.yml) runs the same
 thing in GitHub Actions on demand. The scoring itself is unit-tested, so CI checks the grader
 without calling the API.
 

@@ -11,6 +11,7 @@ import pytest
 
 from app.agent import IncidentReport, InvestigationError, investigate
 from app.agent import loop as agent_loop
+from app.agent.pricing import format_cost, turn_cost
 from app.agent.prompts import build_user_message
 from app.agent.tool_registry import TOOL_DEFINITIONS, TOOL_SPECS
 from app.models import DatadogAlert
@@ -121,6 +122,10 @@ def test_runs_tools_then_returns_report(alert, fake_tools):
     assert result.turns == 2
     assert result.usage["input_tokens"] == 200
     assert result.usage["output_tokens"] == 40
+    # Priced as the configured model: 200 input tokens at $4/M plus 40 output at $20/M.
+    assert result.models == ["claude-opus-5-5"]
+    assert result.cost_usd == round((200 * 4 + 40 * 20) / 1_000_000, 4)
+    assert result.seconds >= 0
     assert fake_tools == [("get_deploy_events", "now-30m", "now", None)]
     assert [c.tool for c in result.trace] == [c.tool for c in seen] == ["get_deploy_events"]
 
@@ -230,3 +235,25 @@ def test_user_message_has_times_and_service(alert):
     assert "Current time: 2026-10-17T12:00:00+00:00" in message
     assert "Alert fired at: 2026-10-17T11:55:00+00:00" in message
     assert "Alerted service: api-gateway" in message
+
+
+def test_cost_is_unknown_when_a_turn_runs_on_an_unpriced_model(alert, fake_tools):
+    first = response("tool_use", tool_use("t1", "get_deploy_events", {"start": "now-30m"}))
+    first.model = "claude-opus-4-8"  # a server-side fallback served this turn
+    result = investigate(alert, client=FakeClaude(first, final()), now=NOW)
+    assert result.models == ["claude-opus-4-8", "claude-opus-5-5"]
+    assert result.cost_usd is None
+
+
+def test_turn_cost():
+    usage = SimpleNamespace(
+        input_tokens=10_000,
+        cache_creation_input_tokens=5_000,
+        cache_read_input_tokens=50_000,
+        output_tokens=3_000,
+    )
+    # 10k x $4 + 5k x $5 + 50k x $0.20 + 3k x $20, per million tokens
+    assert turn_cost("claude-opus-5-5", usage) == pytest.approx(0.135)
+    assert turn_cost("unknown-model", usage) is None
+    assert format_cost(0.135) == "$0.14"
+    assert format_cost(None) == "n/a"

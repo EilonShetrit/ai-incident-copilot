@@ -32,6 +32,9 @@ class Incident(BaseModel):
     trace: list[dict[str, Any]] = Field(default_factory=list)
     report: IncidentReport | None = None
     usage: dict[str, int] = Field(default_factory=dict)
+    cost_usd: float | None = None
+    seconds: float | None = None  # time the agent spent investigating
+    models: list[str] = Field(default_factory=list)
     error: str | None = None
 
 

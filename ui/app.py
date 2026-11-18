@@ -421,8 +421,10 @@ def render_report(incident: dict) -> None:
     cols = st.columns(4)
     kpi(cols[0], "Root cause", rc["service"])
     kpi(cols[1], "Confidence", rc["confidence"].title())
-    kpi(cols[2], "Impacted", str(len(report["impacted_services"])))
-    kpi(cols[3], "Steps", str(len(incident["trace"])))
+    # Impacted services are in the blast radius card; time and cost show what a run takes.
+    seconds, cost = incident.get("seconds"), incident.get("cost_usd")
+    kpi(cols[2], "Investigated in", "n/a" if seconds is None else f"{seconds:.0f}s")
+    kpi(cols[3], "Cost", "n/a" if cost is None else f"${cost:.2f}")
 
     left, right = st.columns([3, 2], gap="medium")
     with left.container(border=True):
@@ -478,9 +480,10 @@ def render_report(incident: dict) -> None:
     if usage:
         cached = usage.get("cache_read_input_tokens", 0)
         total_in = sum(usage.get(k, 0) for k in ("input_tokens", "cache_creation_input_tokens"))
+        models = ", ".join(incident.get("models") or [])
         bottom[1].caption(
             f"Tokens: {total_in + cached:,} in ({cached:,} from cache) · "
-            f"{usage.get('output_tokens', 0):,} out"
+            f"{usage.get('output_tokens', 0):,} out" + (f" · {models}" if models else "")
         )
 
 

@@ -9,6 +9,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 
 from app.agent import InvestigationError, ToolCall, investigate
+from app.agent.pricing import format_cost
 from app.clients.opensearch import get_client
 from app.config import settings
 from app.models import DatadogAlert
@@ -55,7 +56,8 @@ def main() -> None:
     total_in = u["input_tokens"] + u["cache_creation_input_tokens"] + cached
     print(
         f"Done in {result.turns} turns, {len(result.trace)} tool calls, "
-        f"{total_in} input tokens ({cached} from cache) / {u['output_tokens']} output tokens\n",
+        f"{total_in} input tokens ({cached} from cache) / {u['output_tokens']} output tokens, "
+        f"{result.seconds}s, {format_cost(result.cost_usd)} ({', '.join(result.models)})\n",
         file=sys.stderr,
     )
 

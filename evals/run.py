@@ -18,6 +18,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from app.agent import IncidentReport, investigate
+from app.agent.pricing import format_cost
 from app.clients.opensearch import get_client
 from app.config import settings
 from app.scenarios import alert_for, scenarios, seed
@@ -41,8 +42,16 @@ def run_once(scenario: dict) -> dict:
         "turns": result.turns,
         "tool_calls": len(result.trace),
         "usage": result.usage,
+        "cost_usd": result.cost_usd,
         "report": result.report.model_dump(),
     }
+
+
+def averages(runs: list[dict]) -> str:
+    seconds = sum(r["seconds"] for r in runs) / len(runs)
+    costs = [r.get("cost_usd") for r in runs]
+    cost = None if None in costs else sum(costs) / len(costs)
+    return f"Average per investigation: {format_cost(cost)}, {seconds:.0f} seconds."
 
 
 def to_markdown(summary: dict) -> str:
@@ -55,6 +64,8 @@ def to_markdown(summary: dict) -> str:
         f"**{summary['score']:.0%}** of checks passed"
         + (f" (re-graded {summary['regraded']})" if summary.get("regraded") else ""),
         "",
+        averages(runs),
+        "",
         "| Check | " + " | ".join(f"Run {n}" for n in range(1, len(runs) + 1)) + " |",
         "|---|" + "---|" * len(runs),
     ]
@@ -65,6 +76,7 @@ def to_markdown(summary: dict) -> str:
         "| Turns | " + " | ".join(str(r["turns"]) for r in runs) + " |",
         "| Tool calls | " + " | ".join(str(r["tool_calls"]) for r in runs) + " |",
         "| Seconds | " + " | ".join(str(r["seconds"]) for r in runs) + " |",
+        "| Cost | " + " | ".join(format_cost(r.get("cost_usd")) for r in runs) + " |",
     ]
     failures = [
         f"- Run {n}, `{c['name']}`: {c['detail']}"

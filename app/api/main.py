@@ -32,7 +32,13 @@ def run_investigation(incident_id: str) -> None:
         )
     else:
         store.finish(
-            incident_id, status=IncidentStatus.RESOLVED, report=result.report, usage=result.usage
+            incident_id,
+            status=IncidentStatus.RESOLVED,
+            report=result.report,
+            usage=result.usage,
+            cost_usd=result.cost_usd,
+            seconds=result.seconds,
+            models=result.models,
         )
 
 

@@ -15,6 +15,7 @@ from typing import Any
 import anthropic
 from pydantic import ValidationError
 
+from app.agent.pricing import turn_cost
 from app.agent.prompts import SYSTEM_PROMPT, build_user_message
 from app.agent.schemas import IncidentReport
 from app.agent.tool_registry import TOOL_DEFINITIONS, TOOL_SPECS
@@ -61,6 +62,9 @@ class Investigation:
     trace: list[ToolCall]
     turns: int
     usage: dict[str, int] = field(default_factory=dict)
+    cost_usd: float | None = None  # None when a turn ran on a model without a known price
+    seconds: float = 0.0
+    models: list[str] = field(default_factory=list)  # served models; a fallback can differ
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -68,6 +72,9 @@ class Investigation:
             "trace": [asdict(call) for call in self.trace],
             "turns": self.turns,
             "usage": self.usage,
+            "cost_usd": self.cost_usd,
+            "seconds": self.seconds,
+            "models": self.models,
         }
 
 
@@ -118,6 +125,9 @@ def investigate(
     messages: list[dict[str, Any]] = [{"role": "user", "content": build_user_message(alert, now)}]
     trace: list[ToolCall] = []
     usage = dict.fromkeys(USAGE_FIELDS, 0)
+    cost: float | None = 0.0
+    models: list[str] = []
+    started = time.perf_counter()
 
     for turn in range(1, max_turns + 1):
         response = client.beta.messages.create(
@@ -134,6 +144,12 @@ def investigate(
         )
         for name in USAGE_FIELDS:
             usage[name] += getattr(response.usage, name, None) or 0
+        # Price each turn by the model that actually served it.
+        served = getattr(response, "model", None) or settings.claude_model
+        if served not in models:
+            models.append(served)
+        turn_usd = turn_cost(served, response.usage)
+        cost = None if cost is None or turn_usd is None else cost + turn_usd
 
         if response.stop_reason == "refusal":
             raise InvestigationError("Claude declined to investigate this alert")
@@ -183,6 +199,14 @@ def investigate(
             report = IncidentReport.model_validate(_unescape(json.loads(text)))
         except (json.JSONDecodeError, ValidationError) as exc:
             raise InvestigationError(f"Report did not match the schema: {exc}") from exc
-        return Investigation(report=report, trace=trace, turns=turn, usage=usage)
+        return Investigation(
+            report=report,
+            trace=trace,
+            turns=turn,
+            usage=usage,
+            cost_usd=None if cost is None else round(cost, 4),
+            seconds=round(time.perf_counter() - started, 1),
+            models=models,
+        )
 
     raise InvestigationError(f"No report after {max_turns} turns")

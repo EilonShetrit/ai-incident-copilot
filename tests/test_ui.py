@@ -59,6 +59,9 @@ def incident(status, report=None, error=None):
         "trace": [CALL],
         "report": report,
         "usage": {"input_tokens": 10, "cache_read_input_tokens": 90, "output_tokens": 5},
+        "seconds": 74.2,
+        "cost_usd": 0.1834,
+        "models": ["claude-opus-5-5"],
         "error": error,
     }
 
@@ -156,6 +159,8 @@ def test_resolved_shows_report(fake_api):
     text = "".join(m.value for m in at.markdown)
     assert 'kpi-value">payments<' in text
     assert 'kpi-value">High<' in text
+    assert 'kpi-value">74s<' in text
+    assert 'kpi-value">$0.18<' in text
     assert "pool max_size 5" in text
     assert "<b>Do now:</b> Roll back payments to v2.3.0" in text
     assert "Database connection pool exhaustion" in text
