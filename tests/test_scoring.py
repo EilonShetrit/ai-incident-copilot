@@ -1,6 +1,6 @@
 from app.agent import IncidentReport
-from evals.run import to_markdown
-from evals.scoring import score
+from evals.run import crashed_run, to_markdown
+from evals.scoring import CHECK_NAMES, score
 from generator.generate import load_scenario
 
 TRUTH = load_scenario("scenarios/5xx_after_deploy.yaml")["ground_truth"]
@@ -154,3 +154,22 @@ def test_alternative_first_steps():
     for step in ["Roll back inventory to v1.4.2", "Raise inventory's memory limit to 1Gi now"]:
         assert "mitigation_first" not in failed(score(report(next_steps=[step]), truth)), step
     assert "mitigation_first" in failed(score(report(next_steps=["Page the team"]), truth))
+
+
+def test_check_names_match_scorer():
+    assert [c.name for c in score(report(), TRUTH)] == CHECK_NAMES
+
+
+def test_crashed_run_is_reported_and_eval_continues():
+    good = {
+        "checks": [c.__dict__ for c in score(report(), TRUTH)],
+        "turns": 5,
+        "tool_calls": 12,
+        "seconds": 40.0,
+    }
+    crash = crashed_run(RuntimeError("overloaded"), 3.0)
+    md = to_markdown(
+        {"scenario": "x", "date": "d", "model": "m", "score": 0.5, "runs": [good, crash]}
+    )
+    assert "Run 2 crashed: RuntimeError: overloaded" in md
+    assert "no report" not in md

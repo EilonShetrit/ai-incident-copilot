@@ -9,6 +9,19 @@ from typing import Any
 
 from app.agent import IncidentReport
 
+# The checks score() returns, in order (a crashed run fails all of them).
+CHECK_NAMES = [
+    "root_cause_service",
+    "root_cause_explained",
+    "failure_mode",
+    "error_codes",
+    "impacted_services",
+    "healthy_ruled_out",
+    "mitigation_first",
+    "evidence_backed",
+    "specific_codes",
+]
+
 
 @dataclass
 class Check:

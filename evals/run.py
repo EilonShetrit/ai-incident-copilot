@@ -22,9 +22,26 @@ from app.agent.pricing import format_cost
 from app.clients.opensearch import get_client
 from app.config import settings
 from app.scenarios import alert_for, scenarios, seed
-from evals.scoring import score
+from evals.scoring import CHECK_NAMES, score
 
 RESULTS_DIR = Path(__file__).parent / "results"
+
+
+def crashed_run(exc: Exception, seconds: float) -> dict:
+    """A run that ended without a report: it fails every check but the eval goes on."""
+    error = f"{type(exc).__name__}: {exc}"
+    return {
+        "passed": 0,
+        "total": len(CHECK_NAMES),
+        "checks": [{"name": n, "passed": False, "detail": "no report"} for n in CHECK_NAMES],
+        "error": error,
+        "seconds": round(seconds, 1),
+        "turns": 0,
+        "tool_calls": 0,
+        "usage": {},
+        "cost_usd": None,
+        "report": None,
+    }
 
 
 def run_once(scenario: dict) -> dict:
@@ -84,8 +101,10 @@ def to_markdown(summary: dict) -> str:
         for c in run["checks"]
         if not c["passed"]
     ]
-    if failures:
-        lines += ["", "## Failures", *failures]
+    crashes = [f"- Run {n} crashed: {r['error']}" for n, r in enumerate(runs, 1) if r.get("error")]
+    failures = [f for f in failures if "no report" not in f]
+    if failures or crashes:
+        lines += ["", "## Failures", *crashes, *failures]
     return "\n".join(lines) + "\n"
 
 
@@ -93,10 +112,13 @@ def regrade(path: Path, scenario: dict) -> None:
     summary = json.loads(path.read_text())
     try:
         for run in summary["runs"]:
-            IncidentReport.model_validate(run["report"])
+            if run["report"] is not None:
+                IncidentReport.model_validate(run["report"])
     except ValidationError:
         sys.exit(f"{path} was saved with an older report schema; run a fresh eval instead.")
     for run in summary["runs"]:
+        if run["report"] is None:
+            continue
         checks = score(IncidentReport.model_validate(run["report"]), scenario["ground_truth"])
         run["checks"] = [asdict(c) for c in checks]
         run["passed"], run["total"] = sum(c.passed for c in checks), len(checks)
@@ -145,7 +167,13 @@ def evaluate(scenario: dict, n_runs: int) -> None:
     runs = []
     for n in range(1, n_runs + 1):
         print(f"{scenario['name']}: run {n}/{n_runs}...", file=sys.stderr)
-        runs.append(run_once(scenario))
+        started = time.perf_counter()
+        try:
+            runs.append(run_once(scenario))
+        except Exception as exc:  # API or agent error: record it, keep going with the next run
+            runs.append(crashed_run(exc, time.perf_counter() - started))
+            print(f"  run failed: {runs[-1]['error']}", file=sys.stderr)
+            continue
         print(f"  {runs[-1]['passed']}/{runs[-1]['total']} checks passed", file=sys.stderr)
 
     summary = {
