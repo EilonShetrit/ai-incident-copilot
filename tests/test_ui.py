@@ -52,7 +52,7 @@ def incident(status, report=None, error=None):
         "id": "inc-1",
         "status": status,
         "alert": {
-            "title": "[Triggered] api-gateway 5xx rate is above 5%",
+            "title": "[Triggered] api-gateway HTTP error rate is above 5%",
             "date": "2026-10-18T12:05:00Z",
             "tags": ["service:api-gateway"],
         },

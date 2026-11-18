@@ -42,7 +42,7 @@ SEVERITY = {
     "SEV3": (COLORS["accent"], COLORS["info_bg"]),
 }
 SCENARIO_LABELS = {
-    "5xx_after_deploy": "502/503/504 spike after a deploy",
+    "5xx_after_deploy": "460/500/501/502/503/504 spike after a deploy",
     "oom_memory_leak": "Memory leak → OOM kills",
     "dns_failure": "DNS failure after a CoreDNS change",
     "sql_migration_error": "SQL errors after a migration",

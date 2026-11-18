@@ -83,7 +83,7 @@ class FakeClaude:
 def alert():
     return DatadogAlert(
         id="1",
-        title="[Triggered] api-gateway 5xx rate is above 5%",
+        title="[Triggered] api-gateway HTTP error rate is above 5%",
         tags="service:api-gateway,env:prod",
         date=datetime(2026, 10, 17, 11, 55, tzinfo=UTC),
     )

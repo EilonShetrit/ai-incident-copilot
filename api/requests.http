@@ -28,7 +28,7 @@ Content-Type: application/json
 
 {
   "id": "7381920045",
-  "title": "[Recovered] api-gateway 5xx rate is above 5%",
+  "title": "[Recovered] api-gateway HTTP error rate is above 5%",
   "alert_transition": "Recovered",
   "tags": "service:api-gateway,env:prod"
 }

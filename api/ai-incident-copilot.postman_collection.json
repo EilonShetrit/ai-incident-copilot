@@ -47,7 +47,7 @@
       ]
     },
     {
-      "name": "Fire alert: api-gateway 5xx",
+      "name": "Fire alert: api-gateway HTTP error rate",
       "request": {
         "method": "POST",
         "header": [
@@ -72,7 +72,7 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"id\": \"7381920045\",\n  \"title\": \"[Triggered] api-gateway 5xx rate is above 5%\",\n  \"body\": \"5xx error rate on api-gateway is 18.4% over the last 5 minutes (threshold 5%).\",\n  \"alert_transition\": \"Triggered\",\n  \"priority\": \"P2\",\n  \"alert_query\": \"sum(last_5m):sum:http.requests{service:api-gateway,status_class:5xx}.as_count() / sum:http.requests{service:api-gateway}.as_count() > 0.05\",\n  \"tags\": \"service:api-gateway,env:prod,team:platform\"\n}\n"
+          "raw": "{\n  \"id\": \"7381920045\",\n  \"title\": \"[Triggered] api-gateway HTTP error rate is above 5%\",\n  \"body\": \"HTTP error rate on api-gateway is 18.4% over the last 5 minutes (threshold 5%).\",\n  \"alert_transition\": \"Triggered\",\n  \"priority\": \"P2\",\n  \"alert_query\": \"sum(last_5m):sum:http.requests{service:api-gateway,status_code:(460 OR 500 OR 501 OR 502 OR 503 OR 504)}.as_count() / sum:http.requests{service:api-gateway}.as_count() > 0.05\",\n  \"tags\": \"service:api-gateway,env:prod,team:platform\"\n}\n"
         }
       },
       "event": [

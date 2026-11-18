@@ -77,7 +77,7 @@ def test_demo_endpoints(monkeypatch):
     client = TestClient(main.app)
 
     listed = {s["name"]: s for s in client.get("/demo/scenarios").json()}
-    assert "checkout 5xx" in listed["oom_memory_leak"]["alert"]
+    assert "checkout HTTP error rate" in listed["oom_memory_leak"]["alert"]
 
     fired = client.post("/demo/scenarios/oom_memory_leak/fire")
     assert fired.status_code == 202
