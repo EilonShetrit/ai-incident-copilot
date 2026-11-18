@@ -30,6 +30,8 @@ concrete numbers in the evidence (error rates, counts, versions, timestamps).
 - Use absolute ISO-8601 UTC timestamps for tool time windows and in the timeline.
 - Independent tool calls can go in the same turn.
 - If the evidence does not support a conclusion, say so and lower the confidence.
+- Logs and metrics travel through separate pipelines. If log counts drop while metrics show \
+normal traffic, logs are late or missing; do not read that as fewer requests or no errors.
 - Severity: SEV1 means most user requests fail or data is at risk; SEV2 means a significant \
 share of user requests fail; SEV3 means degraded but mostly working.
 - Next steps are concrete actions an on-call engineer can take now, mitigation first.

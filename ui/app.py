@@ -44,6 +44,9 @@ SEVERITY = {
 SCENARIO_LABELS = {
     "5xx_after_deploy": "502/503/504 spike after a deploy",
     "oom_memory_leak": "Memory leak → OOM kills",
+    "dns_failure": "DNS failure after a CoreDNS change",
+    "sql_migration_error": "SQL errors after a migration",
+    "log_pipeline_delay": "Delay in logs (log pipeline lag)",
 }
 IMPACTED_LINE_COLORS = ["#FA377B", "#5A34EA", "#F59E0B", "#0EA5E9", "#14B866"]
 HEALTHY_LINE_COLOR = "#C9C4DB"
@@ -224,9 +227,11 @@ def render_error_rates(impacted: list[str], healthy: list[str], deploys) -> None
     rows, colors, domain = [], [], []
     for n, service in enumerate(impacted + healthy):
         metrics = api_client.service_metrics(service, minutes=30)
-        if not metrics or not metrics["series"]:
+        # Platform components such as the log shipper have no request metrics.
+        series = [p for p in (metrics or {}).get("series", []) if "error_rate" in p]
+        if not series:
             continue
-        for point in metrics["series"]:
+        for point in series:
             rows.append(
                 {
                     "time": pd.to_datetime(point["@timestamp"]),
@@ -318,6 +323,44 @@ def render_memory(services: list[str], deploys) -> None:
         st.altair_chart(chart.properties(height=220), use_container_width=True)
 
 
+def render_ingest_lag(services: list[str], deploys) -> None:
+    """Log ingestion lag, for services that report it (shown when the log pipeline falls behind)."""
+    rows = []
+    for service in services:
+        metrics = api_client.service_metrics(service, minutes=45)
+        for point in (metrics or {}).get("series", []):
+            if "ingest_lag_s" in point:
+                rows.append(
+                    {
+                        "time": pd.to_datetime(point["@timestamp"]),
+                        "service": service,
+                        "lag_min": point["ingest_lag_s"] / 60,
+                    }
+                )
+    if not rows:
+        return
+    lines = (
+        alt.Chart(pd.DataFrame(rows))
+        .mark_line(strokeWidth=2.2, color="#FA377B")
+        .encode(
+            x=alt.X("time:T", title=None, axis=alt.Axis(format="%H:%M", grid=False)),
+            y=alt.Y("lag_min:Q", title="minutes behind"),
+            detail="service:N",
+        )
+    )
+    threshold = (
+        alt.Chart(pd.DataFrame({"y": [5]}))
+        .mark_rule(strokeDash=[2, 3], color="#6B6585")
+        .encode(y="y:Q")
+    )
+    with st.container(border=True):
+        st.markdown("**Log ingestion lag, last 45 minutes**")
+        st.caption("How far behind real time logs arrive; dotted line is the 5-minute alert.")
+        chart = lines + threshold
+        chart = chart + deploy_marks(deploys) if deploys else chart
+        st.altair_chart(chart.properties(height=220), use_container_width=True)
+
+
 def render_failure_mode_and_codes(report: dict) -> None:
     fm = report["failure_mode"]
     with st.container(border=True):
@@ -329,6 +372,9 @@ def render_failure_mode_and_codes(report: dict) -> None:
 
     with st.container(border=True):
         st.markdown("**🚦 Error codes monitored**")
+        if not report["error_codes"]:
+            st.caption("No failed requests: none of the monitored codes were returned.")
+            return
         legend = api_client.status_codes()
         services = list(dict.fromkeys(e["service"] for e in report["error_codes"]))
         counts = {(e["service"], e["code"]): e["count"] for e in report["error_codes"]}
@@ -414,6 +460,7 @@ def render_report(incident: dict) -> None:
     deploys = deploy_times(incident["trace"])
     render_error_rates(report["impacted_services"], report["healthy_services"], deploys)
     render_memory(report["impacted_services"], deploys)
+    render_ingest_lag(report["impacted_services"], deploys)
 
     with st.expander("Evidence", expanded=True):
         st.markdown("\n".join(f"- `{e['tool']}`: {e['finding']}" for e in report["evidence"]))

@@ -11,12 +11,32 @@ services:
   payments:
     description: Authorizes and captures card payments.
     team: payments
-    depends_on: [postgres]
+    depends_on: [postgres, card-processor]
   inventory:
-    description: Stock levels and reservations.
+    description: Stock levels and reservations. Runs its own schema migrations on deploy.
     team: commerce
-    depends_on: []
+    depends_on: [inventory-db]
   postgres:
     description: Primary database for payments.
     team: data-platform
+    depends_on: []
+  inventory-db:
+    description: PostgreSQL database for inventory (stock, reservations).
+    team: data-platform
+    depends_on: []
+  card-processor:
+    description: External card processor (third party), reached at psp.example.net.
+    team: external
+    depends_on: []
+  coredns:
+    description: >-
+      Cluster DNS (CoreDNS). Every pod resolves names through it: cluster names are served
+      locally, external names are forwarded to upstream resolvers. Its config ships as deploys.
+    team: platform
+    depends_on: []
+  log-shipper:
+    description: >-
+      Fluent Bit DaemonSet. Tails every container's logs and ships them to OpenSearch; when it
+      falls behind, recent logs are missing from searches. Reports ingest_lag_s and backlog_mb.
+    team: platform
     depends_on: []

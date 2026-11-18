@@ -167,3 +167,28 @@ def test_failed_shows_error(fake_api):
     fake_api["incident"] = incident("failed", error="Claude declined")
     at = run()
     assert "Claude declined" in at.error[0].value
+
+
+def test_log_pipeline_report_without_http_errors(fake_api, monkeypatch):
+    # A log-shipper incident: no failed requests and no request metrics, only ingest lag.
+    report = {
+        **REPORT,
+        "impacted_services": ["log-shipper"],
+        "healthy_services": ["api-gateway"],
+        "error_codes": [],
+    }
+    monkeypatch.setattr(
+        api_client,
+        "service_metrics",
+        lambda service, minutes=30: {
+            "series": [{"@timestamp": "2026-10-18T12:00:00Z", "ingest_lag_s": 780}]
+            if service == "log-shipper"
+            else [{"@timestamp": "2026-10-18T12:00:00Z", "error_rate": 0.0}]
+        },
+    )
+    fake_api["incident"] = incident("resolved", report=report)
+    at = run()
+    assert not at.exception
+    text = "".join(m.value for m in at.markdown)
+    assert "Log ingestion lag" in text
+    assert any("No failed requests" in c.value for c in at.caption)

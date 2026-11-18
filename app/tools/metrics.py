@@ -12,6 +12,8 @@ METRICS = [
     "memory_mb",
     "memory_limit_mb",
     "restarts",
+    "ingest_lag_s",
+    "backlog_mb",
 ]
 
 

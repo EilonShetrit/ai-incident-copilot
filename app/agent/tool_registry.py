@@ -56,9 +56,11 @@ TOOL_SPECS: dict[str, tuple[type[_Input], str]] = {
     "search_logs": (
         SearchLogsInput,
         "Summarize application logs in a time window: total count, counts by level, HTTP "
-        "status code and service version, the five most frequent messages, and a few sample "
-        "lines (newest first). Use it to see what errors a service is returning and from "
-        "which version.",
+        "status code, service version and endpoint path, the five most frequent messages, and "
+        "a few sample lines (newest first). Use it to see what errors a service is returning, "
+        "from which version and on which endpoints. Platform components (coredns, log-shipper) "
+        "log here too. Counts come from ingested logs, so they undercount if the log pipeline "
+        "lags; get_metrics is the source of truth for traffic and error rates.",
     ),
     "get_metrics": (
         GetMetricsInput,

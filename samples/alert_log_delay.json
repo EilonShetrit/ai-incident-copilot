@@ -1,0 +1,9 @@
+{
+  "id": "7381920471",
+  "title": "[Triggered] log-shipper ingestion lag is above 5 minutes",
+  "body": "Log ingestion lag on log-shipper is 12m 40s (threshold 5m). Logs in OpenSearch are behind real time, so log searches and log-based monitors may be incomplete.",
+  "alert_transition": "Triggered",
+  "priority": "P3",
+  "alert_query": "max(last_5m):max:fluentbit.output.ingest_lag_seconds{service:log-shipper} > 300",
+  "tags": "service:log-shipper,env:prod,team:platform"
+}

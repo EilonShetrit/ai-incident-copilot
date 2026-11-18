@@ -73,9 +73,14 @@ failure_modes:
     name: DNS or network failure
     category: infrastructure
     signals:
-      - Name resolution errors, connect timeouts across many services at once
-    triggers: [DNS provider issue, security group or network policy change]
-    first_response: Revert the network change; check DNS health.
+      - "Name resolution errors: 'lookup <host>: i/o timeout', 'no such host', 'server misbehaving'"
+      - Only calls to names the broken resolver serves fail (often external hosts); others are fine
+      - Latency jumps to the DNS timeout (about 5s); errors can start a TTL after the change
+      - "Resolver logs such as CoreDNS 'no healthy upstreams'"
+    triggers:
+      - DNS config change (CoreDNS forwarders, stub zones), resolver or provider outage
+      - Security group or network policy change
+    first_response: Revert the DNS or network change; check resolver health.
   tls_certificate_expiry:
     name: Expired TLS certificate
     category: infrastructure
@@ -97,3 +102,29 @@ failure_modes:
       - Write errors ('no space left on device'), database refusing writes
     triggers: [Log growth, missing retention, large temp files]
     first_response: Free space or expand the volume; fix retention.
+  db_schema_migration_error:
+    name: Database schema migration error
+    category: change
+    signals:
+      - "SQL errors right after a deploy: SQLSTATE 42703 undefined column, 42P01 undefined table, 23502 not-null violation"
+      - Fails fast (low latency) on the code paths that touch the changed table; others keep working
+      - A migration ran as part of the deploy (startup or migration logs)
+    triggers:
+      - Destructive migration (drop or rename) shipped before all code stopped using the column
+      - Migration and code out of order during a rolling deploy
+    first_response: >-
+      Restore the schema first (re-add the column or revert the migration); a code rollback
+      alone fails if the old code also needs what was dropped. Then follow expand/contract.
+  log_pipeline_backpressure:
+    name: Log pipeline lag or backpressure
+    category: observability
+    signals:
+      - Logs missing or late while metrics show normal traffic and error rates
+      - Shipper buffer or backlog growing, inputs paused, ingest lag rising
+      - Log store rejecting bulk writes (HTTP 429, queue full) or disk watermark hit
+    triggers:
+      - Log volume spike (debug logging, a chatty deploy, error loop)
+      - Slow or full log store
+    first_response: >-
+      Cut the volume at the source (revert the log level or sampling), then let the backlog
+      drain or scale the shipper and store. Until then, distrust log-based dashboards and alerts.

@@ -3,7 +3,16 @@ from typing import Any
 from app.clients.opensearch import LOGS_INDEX, get_client
 from app.tools._time import time_range
 
-SAMPLE_FIELDS = ["@timestamp", "service", "version", "level", "status_code", "host", "message"]
+SAMPLE_FIELDS = [
+    "@timestamp",
+    "service",
+    "version",
+    "level",
+    "path",
+    "status_code",
+    "host",
+    "message",
+]
 
 
 def search_logs(
@@ -16,7 +25,7 @@ def search_logs(
 ) -> dict[str, Any]:
     """Summarize logs in a time window instead of returning raw lines.
 
-    Returns total count, counts by level / status code / version, the most frequent
+    Returns total count, counts by level / status code / version / endpoint, the most frequent
     messages, and a few sample lines (newest first).
     """
     filters: list[dict] = [time_range(start, end)]
@@ -36,6 +45,7 @@ def search_logs(
             "by_level": {"terms": {"field": "level"}},
             "by_status": {"terms": {"field": "status_code", "size": 10}},
             "by_version": {"terms": {"field": "version", "size": 10}},
+            "by_path": {"terms": {"field": "path", "size": 10}},
             "top_messages": {"terms": {"field": "message.raw", "size": 5}},
         },
     }
@@ -50,6 +60,7 @@ def search_logs(
         "by_level": buckets("by_level"),
         "by_status_code": buckets("by_status"),
         "by_version": buckets("by_version"),
+        "by_path": buckets("by_path"),
         "top_messages": [
             {"message": b["key"], "count": b["doc_count"]} for b in aggs["top_messages"]["buckets"]
         ],

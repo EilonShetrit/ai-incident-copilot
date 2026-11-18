@@ -93,8 +93,11 @@ def test_service_map_has_upstream_and_downstream():
 
 def test_runbooks():
     assert set(get_runbook()["available"]) == {
+        "db_migration_failure",
         "deploy_regression",
+        "dns_failure",
         "high_5xx_rate",
+        "log_pipeline_lag",
         "memory_pressure",
     }
     assert "Roll back" in get_runbook("deploy_regression")["content"]

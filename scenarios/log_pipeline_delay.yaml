@@ -1,0 +1,106 @@
+# Scenario: logs arrive late because a debug-level deploy floods the log pipeline.
+#
+# All times are minutes relative to the alert window (T = 0); the lag alert fires at T+3.
+# No user is affected: metrics show normal traffic and error rates. What breaks is visibility:
+# only a fraction of log lines reach OpenSearch, so log searches undercount everything.
+# A payments deploy 6 minutes before the alert is a red herring.
+name: log_pipeline_delay
+description: >
+  checkout v3.9.1 sets LOG_LEVEL=debug to chase a bug and starts writing about 16x its usual log
+  volume. The Fluent Bit log shipper cannot keep up: its buffer fills, OpenSearch rejects bulk
+  requests with 429, and ingestion falls more than 10 minutes behind. Services are healthy;
+  log-based dashboards and monitors are blind until the volume drops.
+alert: samples/alert_log_delay.json
+
+window:
+  start: -40
+  end: 10
+  alert_at: 3
+
+seed: 31
+requests_per_minute: 40
+
+services:
+  api-gateway:
+    version: v1.12.4
+    baseline: {error_rate: 0.002, latency_p95_ms: 180, log_keep: 1.0}
+  checkout:
+    version: v3.9.0
+    baseline: {error_rate: 0.002, latency_p95_ms: 150, log_keep: 1.0}
+  payments:
+    version: v2.4.0
+    baseline: {error_rate: 0.001, latency_p95_ms: 120, db_pool_max: 50, db_pool_active: 18, log_keep: 1.0}
+  inventory:
+    version: v1.5.3
+    baseline: {error_rate: 0.001, latency_p95_ms: 60, log_keep: 1.0}
+  log-shipper:
+    version: fluent-bit-3.1.4
+    traffic: false
+    baseline: {ingest_lag_s: 4, backlog_mb: 12}
+
+deploys:
+  - at: -16
+    service: checkout
+    from_version: v3.9.0
+    to_version: v3.9.1
+    author: lior.b
+    change: "Set LOG_LEVEL=debug to trace a cart rounding bug"
+    commit: e41b9d2
+  - at: -3
+    service: payments
+    from_version: v2.4.0
+    to_version: v2.4.1
+    author: maya.r
+    change: "Bump card processor SDK to 5.2.1"
+    commit: 0f3a7c5
+
+faults:
+  - service: log-shipper
+    starts_at: -15
+    ramp: 18
+    effect: {ingest_lag_s: 780, backlog_mb: 2100}
+  # Only a share of each service's lines make it through the backlog.
+  - {service: api-gateway, starts_at: -12, ramp: 5, effect: {log_keep: 0.12}}
+  - {service: checkout, starts_at: -12, ramp: 5, effect: {log_keep: 0.12}}
+  - {service: payments, starts_at: -12, ramp: 5, effect: {log_keep: 0.12}}
+  - {service: inventory, starts_at: -12, ramp: 5, effect: {log_keep: 0.12}}
+
+events:
+  - at: -16
+    second: 30
+    service: checkout
+    host: checkout-1
+    message: "logger: level changed INFO -> DEBUG (LOG_LEVEL=debug)"
+  - at: -14
+    every: 2
+    until: 9
+    service: log-shipper
+    level: WARN
+    message: >-
+      [input:tail] tail.0 paused (mem_buf_limit 512MB reached); checkout containers write
+      41.8k lines/min vs 2.6k baseline
+  - at: -11
+    every: 1
+    until: 9
+    second: 45
+    service: log-shipper
+    level: ERROR
+    message: >-
+      [output:opensearch] HTTP 429 es_rejected_execution_exception (bulk queue full);
+      retrying chunk in 30s (retry #{n})
+
+ground_truth:
+  alerted_service: log-shipper
+  root_cause_service: checkout
+  root_cause_deploy: checkout v3.9.1
+  root_cause: "checkout v3.9.1 set LOG_LEVEL=debug; ~16x log volume overwhelms the Fluent Bit shipper"
+  impacted_services: [log-shipper]
+  healthy_services: [api-gateway, payments, inventory]
+  expected_next_step: "Set checkout's log level back to INFO (roll back v3.9.1)"
+  root_cause_keywords: [debug, v3.9.1]
+  first_step_keywords:
+    - [checkout, info]
+    - [checkout, debug]
+    - [rollback, checkout]
+  failure_mode: log_pipeline_backpressure
+  key_error_codes: {}

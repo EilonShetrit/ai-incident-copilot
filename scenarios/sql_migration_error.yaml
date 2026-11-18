@@ -1,0 +1,119 @@
+# Scenario: a release drops a column that one code path still uses.
+#
+# All times are minutes relative to the first SQL error (T = 0).
+# inventory v1.6.0 runs migration 0042, which drops `reserved_qty`, but the reservation endpoint
+# still writes it. Rolling the code back does NOT help: v1.5.3 also uses the dropped column.
+# A checkout deploy 14 minutes earlier is a red herring.
+name: sql_migration_error
+description: >
+  inventory v1.6.0 ships migration 0042, which drops the reserved_qty column in the same
+  release that was meant to stop using it. POST /inventory/reserve still writes it, so every
+  reservation fails with SQLSTATE 42703 and inventory returns 500; stock reads keep working.
+  checkout cannot reserve stock and returns 502, and the gateway passes it on. payments is healthy.
+alert: samples/alert_sql.json
+
+window:
+  start: -45
+  end: 10
+  alert_at: 4
+
+seed: 23
+requests_per_minute: 40
+
+services:
+  api-gateway:
+    version: v1.12.4
+    baseline: {error_rate: 0.002, latency_p95_ms: 180}
+  checkout:
+    version: v3.8.2
+    baseline: {error_rate: 0.002, latency_p95_ms: 150}
+  payments:
+    version: v2.4.1
+    baseline: {error_rate: 0.001, latency_p95_ms: 120, db_pool_max: 50, db_pool_active: 16}
+  inventory:
+    version: v1.5.3
+    baseline: {error_rate: 0.001, latency_p95_ms: 60}
+
+deploys:
+  - at: -14
+    service: checkout
+    from_version: v3.8.2
+    to_version: v3.9.0
+    author: lior.b
+    change: "Show delivery estimate on the order page"
+    commit: 5d2a9c1
+  - at: -1
+    service: inventory
+    from_version: v1.5.3
+    to_version: v1.6.0
+    author: omer.t
+    change: "Track reservations in the reservations table; drop unused reserved_qty (migration 0042)"
+    commit: a3f0e88
+
+faults:
+  - service: inventory          # fails fast: the query errors out before doing any work
+    starts_at: 0
+    ramp: 1
+    effect: {error_rate: 0.48, latency_p95_ms: 45}
+    path: /inventory/reserve
+    errors:
+      - status_code: 500
+        weight: 1
+        message: >-
+          reserve stock failed: ERROR: column "reserved_qty" does not exist (SQLSTATE 42703)
+          in UPDATE stock SET reserved_qty = reserved_qty + $1 WHERE sku = $2
+  - service: checkout
+    starts_at: 0
+    ramp: 2
+    effect: {error_rate: 0.22, latency_p95_ms: 210}
+    path: /checkout/submit
+    errors:
+      - status_code: 502
+        weight: 1
+        message: "reserve stock failed: upstream inventory returned 500 Internal Server Error"
+  - service: api-gateway
+    starts_at: 1
+    ramp: 2
+    effect: {error_rate: 0.2, latency_p95_ms: 260}
+    path: /api/v1/checkout
+    errors:
+      - status_code: 502
+        weight: 1
+        message: "upstream checkout returned 502 Bad Gateway"
+
+events:
+  - at: -1
+    second: 8
+    service: inventory
+    host: inventory-1
+    message: "migrations: applying 0042_drop_reserved_qty (ALTER TABLE stock DROP COLUMN reserved_qty)"
+  - at: -1
+    second: 9
+    service: inventory
+    host: inventory-1
+    message: "migrations: 0042_drop_reserved_qty applied in 184ms; schema version is now 42"
+  - at: -1
+    second: 40
+    service: inventory
+    host: inventory-1
+    message: "starting inventory v1.6.0; reservations written to table reservations"
+
+ground_truth:
+  alerted_service: checkout
+  root_cause_service: inventory
+  root_cause_deploy: inventory v1.6.0
+  root_cause: "migration 0042 in inventory v1.6.0 dropped reserved_qty while /inventory/reserve still writes it"
+  impacted_services: [api-gateway, checkout, inventory]
+  healthy_services: [payments]
+  expected_next_step: "Restore the reserved_qty column (re-add it or revert migration 0042); a code rollback alone will not help"
+  root_cause_keywords: [v1.6.0, reserved_qty]
+  # The column is gone, so a fix must restore the schema; a plain code rollback is not enough.
+  first_step_keywords:
+    - [reserved_qty]
+    - [migration]
+    - ["0042"]
+  failure_mode: db_schema_migration_error
+  key_error_codes:
+    inventory: [500]
+    checkout: [502]
+    api-gateway: [502]

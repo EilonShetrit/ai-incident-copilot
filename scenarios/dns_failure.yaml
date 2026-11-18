@@ -1,0 +1,130 @@
+# Scenario: a CoreDNS config change breaks resolution of external names.
+#
+# All times are minutes relative to the first failed lookup (T = 0).
+# Internal service names keep resolving, so only the path that calls an external host fails:
+# payments -> card processor. A payments deploy 25 minutes earlier is a red herring.
+name: dns_failure
+description: >
+  The platform team rolls out a CoreDNS config that forwards external zones to new upstream
+  resolvers, which do not answer. Once cached records expire, payments can no longer resolve the
+  card processor (psp.example.net): lookups time out, payments returns 504/502, and checkout and
+  the gateway pass the failures on. Internal names still resolve, so inventory is healthy.
+alert: samples/alert_dns.json
+
+window:
+  start: -60
+  end: 10
+  alert_at: 4
+
+seed: 11
+requests_per_minute: 40
+
+services:
+  api-gateway:
+    version: v1.12.4
+    baseline: {error_rate: 0.002, latency_p95_ms: 180}
+  checkout:
+    version: v3.8.0
+    baseline: {error_rate: 0.002, latency_p95_ms: 150}
+  payments:
+    version: v2.4.0
+    baseline: {error_rate: 0.001, latency_p95_ms: 240, db_pool_max: 50, db_pool_active: 17}
+  inventory:
+    version: v1.5.3
+    baseline: {error_rate: 0.001, latency_p95_ms: 60}
+
+deploys:
+  - at: -25
+    service: payments
+    from_version: v2.4.0
+    to_version: v2.4.1
+    author: maya.r
+    change: "Add retry metrics to the card processor client"
+    commit: 1c9e2f4
+  - at: -2
+    service: coredns
+    from_version: cfg-41
+    to_version: cfg-42
+    author: platform-bot
+    change: "Forward external zones to the new resolvers 10.0.8.53 and 10.0.9.53"
+    commit: 77ab3d0
+
+faults:
+  - service: payments           # every card processor call waits out the 5s DNS timeout
+    starts_at: 0
+    ramp: 1
+    effect: {error_rate: 0.32, latency_p95_ms: 5200}
+    path: /payments/authorize
+    errors:
+      - status_code: 504
+        weight: 0.75
+        message: >-
+          card processor call failed: dial tcp: lookup psp.example.net on 10.96.0.10:53:
+          read udp 10.4.2.17:41022->10.96.0.10:53: i/o timeout
+      - status_code: 502
+        weight: 0.25
+        message: "card processor call failed: lookup psp.example.net on 10.96.0.10:53: server misbehaving"
+  - service: checkout
+    starts_at: 0
+    ramp: 2
+    effect: {error_rate: 0.2, latency_p95_ms: 5400}
+    path: /checkout/submit
+    errors:
+      - status_code: 502
+        weight: 0.8
+        message: "payments authorize failed: upstream returned 504 Gateway Timeout"
+      - status_code: 504
+        weight: 0.2
+        message: "payments authorize timed out after 6s"
+  - service: api-gateway
+    starts_at: 1
+    ramp: 2
+    effect: {error_rate: 0.16, latency_p95_ms: 5600}
+    path: /api/v1/checkout
+    errors:
+      - status_code: 502
+        weight: 0.8
+        message: "upstream checkout returned 502 Bad Gateway"
+      - status_code: 504
+        weight: 0.2
+        message: "upstream checkout timed out after 8s"
+
+events:
+  - at: -2
+    second: 15
+    service: coredns
+    host: coredns-1
+    message: "[INFO] Reloading complete; config hash 9f2c41 (forward . 10.0.8.53 10.0.9.53)"
+  - at: 0
+    every: 1
+    until: 9
+    second: 25
+    service: coredns
+    level: ERROR
+    message: "[ERROR] plugin/errors: 2 psp.example.net. A: read udp 10.244.1.9:52114->10.0.8.53:53: i/o timeout"
+  - at: 1
+    every: 2
+    until: 9
+    second: 50
+    service: coredns
+    level: WARN
+    message: "[WARNING] plugin/forward: no healthy upstreams for . (10.0.8.53:53, 10.0.9.53:53)"
+
+ground_truth:
+  alerted_service: api-gateway
+  root_cause_service: coredns
+  root_cause_deploy: coredns cfg-42
+  root_cause: "CoreDNS cfg-42 forwards external names to resolvers that do not answer"
+  impacted_services: [api-gateway, checkout, payments]
+  healthy_services: [inventory]
+  expected_next_step: "Roll back the CoreDNS config to cfg-41"
+  root_cause_keywords: [coredns, dns]
+  first_step_keywords:
+    - [rollback, coredns]
+    - [rollback, dns]
+    - [coredns, cfg-41]
+  failure_mode: dns_or_network_failure
+  key_error_codes:
+    payments: [504]
+    checkout: [502]
+    api-gateway: [502]

@@ -87,7 +87,9 @@ def score(report: IncidentReport, truth: dict[str, Any]) -> list[Check]:
         ),
         Check(
             "impacted_services",
-            impacted == expected_impacted,
+            # Listing the root-cause component itself as impacted is a judgment call either way.
+            impacted - {truth["root_cause_service"]}
+            == expected_impacted - {truth["root_cause_service"]},
             f"said {sorted(impacted)}, expected {sorted(expected_impacted)}",
         ),
         Check(

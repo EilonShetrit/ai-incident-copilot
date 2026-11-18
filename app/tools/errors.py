@@ -10,7 +10,8 @@ def get_error_codes(start: str, end: str, service: str | None = None) -> dict[st
 
     Codes the monitors watch (460, 500-504) come with their label, meaning and common causes.
     """
-    filters: list[dict] = [time_range(start, end)]
+    # Request logs only; event lines (DNS, log shipper, migrations) have no status code.
+    filters: list[dict] = [time_range(start, end), {"exists": {"field": "status_code"}}]
     if service:
         filters.append({"term": {"service": service}})
     body = {

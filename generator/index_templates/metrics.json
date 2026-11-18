@@ -15,7 +15,9 @@
         "db_pool_active": {"type": "integer"},
         "memory_mb": {"type": "integer"},
         "memory_limit_mb": {"type": "integer"},
-        "restarts": {"type": "integer"}
+        "restarts": {"type": "integer"},
+        "ingest_lag_s": {"type": "integer"},
+        "backlog_mb": {"type": "integer"}
       }
     }
   }

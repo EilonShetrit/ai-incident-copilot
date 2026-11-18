@@ -23,7 +23,15 @@ PATHS = {
 }
 HTTP_METHOD = {"api-gateway": "POST", "checkout": "POST", "payments": "POST", "inventory": "GET"}
 # Optional per-service gauges, emitted when the scenario defines them.
-GAUGES = ("db_pool_max", "db_pool_active", "memory_mb", "memory_limit_mb", "restarts")
+GAUGES = (
+    "db_pool_max",
+    "db_pool_active",
+    "memory_mb",
+    "memory_limit_mb",
+    "restarts",
+    "ingest_lag_s",
+    "backlog_mb",
+)
 REQUESTS_SCALE = 25  # each sampled log line stands for this many real requests
 
 
@@ -67,7 +75,8 @@ def _state_at(scenario: dict[str, Any], service: str, minute: int) -> dict[str, 
 
 
 def _version_at(scenario: dict[str, Any], service: str, minute: float) -> str:
-    version = scenario["services"][service]["version"]
+    # Platform components that only appear in deploys and events have no services entry.
+    version = scenario["services"].get(service, {}).get("version", "n/a")
     for deploy in sorted(scenario.get("deploys", []), key=lambda d: d["at"]):
         if deploy["service"] == service and minute >= deploy["at"]:
             version = deploy["to_version"]
@@ -111,11 +120,20 @@ def generate(scenario: dict[str, Any], anchor: datetime | None = None) -> Datase
 
     for minute in range(window["start"], window["end"]):
         minute_start = anchor + timedelta(minutes=minute)
-        for service in scenario["services"]:
+        for service, spec in scenario["services"].items():
             state = _state_at(scenario, service, minute)
             values, fault = state["values"], state["fault"]
             version = _version_at(scenario, service, minute)
             errors = 0
+
+            # Platform components such as a log shipper serve no requests; they only report gauges.
+            if not spec.get("traffic", True):
+                metric = {"@timestamp": _iso(minute_start), "service": service, "version": version}
+                for key in GAUGES:
+                    if key in values:
+                        metric[key] = round(values[key] * rng.uniform(0.95, 1.05))
+                data.metrics.append(metric)
+                continue
 
             for _ in range(rpm):
                 offset = rng.uniform(0, 60)
@@ -129,6 +147,11 @@ def generate(scenario: dict[str, Any], anchor: datetime | None = None) -> Datase
                     status, level, message = 200, "INFO", "request completed"
                 errors += is_error
                 path = rng.choice(PATHS[service])
+                if is_error and fault and "path" in fault:  # the fault hits one endpoint only
+                    path = fault["path"]
+                # A lagging log pipeline delivers only a share of the lines; metrics are unaffected.
+                if "log_keep" in values and rng.random() > values["log_keep"]:
+                    continue
                 data.logs.append(
                     {
                         "@timestamp": _iso(ts),
@@ -166,6 +189,8 @@ def generate(scenario: dict[str, Any], anchor: datetime | None = None) -> Datase
 
     # Startup log lines from the deploy itself: the evidence a good investigation finds.
     for deploy in scenario.get("deploys", []):
+        if deploy["service"] not in scenario["services"]:
+            continue
         ts = anchor + timedelta(minutes=deploy["at"], seconds=20)
         pool = _state_at(scenario, deploy["service"], deploy["at"])["values"]
         if "db_pool_max" in pool:

@@ -7,7 +7,7 @@
 
 > **All data in this project is synthetic.** No real systems, customers or logs are used.
 
-**Status:** MVP complete. Two end-to-end incident scenarios, from webhook to report, each graded by a ground-truth eval.
+**Status:** MVP complete. Five end-to-end incident scenarios, from webhook to report, each graded by a ground-truth eval.
 
 <!-- Screenshot: add docs/screenshot.png from a real run and reference it here. -->
 
@@ -50,6 +50,33 @@ Two traps make this one harder:
   The agent has to rule it out from the metrics, not blame it because of its timing.
 
 See [`scenarios/oom_memory_leak.yaml`](scenarios/oom_memory_leak.yaml).
+
+### 3. DNS failure after a CoreDNS change
+
+The platform team ships a CoreDNS config that forwards external names to new resolvers, which
+do not answer. Once cached records expire, `payments` cannot resolve the card processor
+(`lookup psp.example.net: i/o timeout`): it returns **504** after the 5-second DNS timeout, and
+`checkout` and the gateway return **502**. Cluster-internal names still resolve, so `inventory`
+is healthy. The cause is not an application deploy at all, and a `payments` deploy 25 minutes
+earlier is a red herring. See [`scenarios/dns_failure.yaml`](scenarios/dns_failure.yaml).
+
+### 4. SQL errors after a migration
+
+`inventory v1.6.0` runs migration 0042, which drops the `reserved_qty` column, but the
+reservation endpoint still writes it. Every `POST /inventory/reserve` fails with
+`column "reserved_qty" does not exist (SQLSTATE 42703)` and returns **500**, while stock reads
+keep working. The trap: **rolling the code back does not help**, because the previous version
+uses the dropped column too. The fix is to restore the schema first.
+See [`scenarios/sql_migration_error.yaml`](scenarios/sql_migration_error.yaml).
+
+### 5. Delay in logs (log pipeline lag)
+
+`checkout v3.9.1` sets `LOG_LEVEL=debug` and writes about 16 times its usual log volume. The
+Fluent Bit log shipper falls behind, OpenSearch rejects bulk writes with HTTP 429, and logs
+arrive more than 10 minutes late. The alert is on the **log pipeline**, not on a service, and no
+user is affected: metrics show normal traffic and error rates. A naive investigation sees log
+counts drop by 90% and concludes traffic fell. See
+[`scenarios/log_pipeline_delay.yaml`](scenarios/log_pipeline_delay.yaml).
 
 ## How it works
 
@@ -212,6 +239,9 @@ values come from the scenario file. For the first scenario:
 For the memory leak, the same checks expect `inventory` as the root cause (named by `v1.5.0` and
 memory), `memory_leak_oom` as the failure mode, 502/503 at checkout, `payments` ruled out, and a
 first step that rolls back or relieves `inventory`. Blaming the `api-gateway` deploy fails it.
+The DNS scenario expects CoreDNS as the cause and a rollback of its config; the SQL scenario
+expects a first step that restores the schema, not a plain code rollback; the log delay scenario
+expects `checkout`'s debug log level as the cause and no failed requests in the error breakdown.
 
 Results land in [`evals/results/`](evals/results/): one JSON per eval with every report, and
 a `latest-<scenario>.md` pass/fail table per scenario. The [Eval workflow](.github/workflows/eval.yml) runs the same
@@ -263,6 +293,7 @@ Python 3.12 · FastAPI · Claude API (tool use) · OpenSearch · Streamlit · Do
 - [x] Scenario eval against ground truth
 - [x] Docker image and one-command demo
 - [x] Second scenario: memory leak and OOM kills
+- [x] DNS failure, SQL migration error and log pipeline lag scenarios
 - [ ] Demo video
 
 ## License
